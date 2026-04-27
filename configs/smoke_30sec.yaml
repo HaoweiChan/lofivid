@@ -1,0 +1,36 @@
+# Smoke test — fastest possible end-to-end render to validate the pipeline.
+# Single track, single scene, no overlays, low resolution.
+# Should complete in a few minutes including model warmup.
+
+run_id: smoke_30sec
+duration_minutes: 0.5
+output_resolution: [640, 360]
+fps: 24
+seed: 1
+
+music:
+  backend: acestep
+  track_count: 1
+  track_seconds_range: [30, 30]
+  crossfade_seconds: 0
+  target_lufs: -16
+  anchor:
+    bpm_range: [75, 75]
+    key_pool: [A minor]
+    style_tags: [lo-fi, chillhop]
+  variations:
+    - { mood: smoke test, instruments: [piano] }
+
+visuals:
+  preset: anime
+  scene_count: 1
+  scene_seconds: 30
+  parallax_loop_seconds: 15
+  premium_scenes: 0
+  keyframe_prompt_template: |
+    cozy room with bookshelf, soft warm light, window
+  loras: []
+
+overlays:
+  rain_video: null
+  vinyl_crackle: null

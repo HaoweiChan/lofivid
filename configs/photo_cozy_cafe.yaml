@@ -1,0 +1,43 @@
+# Photo-realistic cozy-cafe preset — 1-hour afternoon mix.
+# Run with: docker compose run --rm lofivid generate -c configs/photo_cozy_cafe.yaml
+
+run_id: photo_cozy_cafe_v1
+duration_minutes: 60
+output_resolution: [1920, 1080]
+fps: 24
+seed: 1337
+
+music:
+  backend: acestep
+  track_count: 10
+  track_seconds_range: [330, 400]
+  crossfade_seconds: 5
+  target_lufs: -14
+  anchor:
+    bpm_range: [72, 84]
+    key_pool: [F major, C major, A minor, G major]
+    style_tags: [lo-fi, chillhop, jazzy, warm, vinyl crackle]
+  variations:
+    - { mood: afternoon coffee, instruments: [Rhodes, upright bass, brushed drums] }
+    - { mood: window seat,      instruments: [acoustic guitar, vibraphone, shaker] }
+    - { mood: paper turning,    instruments: [piano, double bass, soft kick] }
+    - { mood: warm mug,         instruments: [Wurlitzer, muted trumpet, hi-hat] }
+    - { mood: soft chatter,     instruments: [piano, cello, brushes] }
+
+visuals:
+  preset: photo
+  scene_count: 6
+  scene_seconds: 600          # 6 × 600 s = 3600 s = 60 min
+  parallax_loop_seconds: 30
+  premium_scenes: 0
+  keyframe_prompt_template: |
+    cozy independent cafe interior, large window with rain outside,
+    cup of coffee with steam, books on the table, warm afternoon light,
+    bokeh background, photorealistic
+  loras: []
+
+overlays:
+  rain_video: assets/overlays/rain_window_loop.mp4
+  rain_opacity: 0.10
+  vinyl_crackle: assets/audio/vinyl_crackle_loop.wav
+  vinyl_gain_db: -30

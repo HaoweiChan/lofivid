@@ -1,0 +1,36 @@
+# Run with:  docker compose run --rm lofivid generate --config configs/anime_rainy_window.yaml
+#
+# WSL2 + RTX 5070 Ti notes:
+#   - Windows host driver must be 572.xx or later (Blackwell CUDA in WSL).
+#   - Do NOT install nvidia drivers inside WSL; the toolkit comes from the image.
+#   - Verify the GPU is visible:  docker compose run --rm lofivid verify-env
+
+services:
+  lofivid:
+    build: .
+    image: lofivid:latest
+    # Host-shared caches so model weights and intermediate artifacts persist
+    # across container rebuilds. Adjust paths to taste.
+    volumes:
+      - ./cache:/app/cache
+      - ./output:/app/output
+      - ./configs:/app/configs
+      - ./assets:/app/assets
+      - lofivid-models:/models
+    environment:
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Long-running renders (2h videos can take >1h) — disable timeout.
+    stop_grace_period: 30s
+
+volumes:
+  lofivid-models:
+    # Named volume so 50+ GB of model weights survive `docker compose down`.

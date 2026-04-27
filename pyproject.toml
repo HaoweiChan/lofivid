@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lofivid"
+version = "0.1.0"
+description = "Local AI lofi music video generator (ACE-Step + SDXL + DepthFlow + FFmpeg)"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "lofivid contributors" }]
+keywords = ["lofi", "music", "video", "ai", "generative", "ace-step", "sdxl"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+# NOTE: Heavy GPU dependencies (torch, diffusers, ace-step, etc.) are NOT
+# pinned here. They live in the Dockerfile so the host can stay clean
+# while the Blackwell sm_120 nightly toolchain is isolated.
+dependencies = [
+    "typer>=0.12,<1.0",
+    "pydantic>=2.6,<3.0",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "ffmpeg-python>=0.2.0",
+    "numpy>=1.26",
+    "pillow>=10.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+lofivid = "lofivid.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["lofivid*"]
+exclude = ["tests*", "cache*", "output*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "gpu: tests requiring a CUDA GPU (skipped by default in CI)",
+    "slow: tests that take more than a few seconds",
+]
