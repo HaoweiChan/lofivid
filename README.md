@@ -49,7 +49,7 @@ lofivid/
 └── tests/                 # env/cache/tracklist/mixer + 30-sec smoke render
 ```
 
-See `/home/willy/.claude/plans/i-want-to-create-jaunty-thimble.md` for the full design rationale.
+See [`PLAN.md`](./PLAN.md) for the full design rationale and a current implementation-status checklist (what's done in Phase 1, what's left for Phases 2–4, and exact handover commands).
 
 ## License
 
