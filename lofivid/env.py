@@ -1,19 +1,23 @@
-"""Blackwell sm_120 + NVENC preflight gate.
+"""Blackwell sm_120 + ffmpeg encoder preflight gate.
 
 Failing loudly here saves hours of confusing errors later in the pipeline.
 The checks are defensive against the specific WSL2 + RTX 50 series quirks
 documented in the project plan.
+
+Originally Docker-only. Since the host-mode pivot (see HOST_MODE.md), the
+checks also accept libx264 software encode as a working configuration —
+NVENC is preferred when available but not required.
 """
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Literal
 
+from lofivid._ffmpeg import ffmpeg_bin, select_encoder
+
 EXPECTED_COMPUTE_CAPABILITY = (12, 0)  # sm_120 = Blackwell consumer (RTX 50 series)
-REQUIRED_NVENC_ENCODER = "av1_nvenc"
 
 
 @dataclass
@@ -50,47 +54,55 @@ def check_torch_cuda() -> CheckResult:
             f"Detected {name} with compute capability {cap}, expected sm_120 ({EXPECTED_COMPUTE_CAPABILITY}). "
             "Pipeline may still work but was tuned for RTX 5070 Ti.",
         )
-    return CheckResult("torch.cuda", "ok", f"{name} (sm_{cap[0]}{cap[1]}), torch={torch.__version__}")
+    return CheckResult(
+        "torch.cuda", "ok",
+        f"{name} (sm_{cap[0]}{cap[1]}), torch={torch.__version__}",
+    )
 
 
 def check_ffmpeg() -> CheckResult:
-    """Verify ffmpeg binary exists and reports av1_nvenc."""
-    binary = shutil.which("ffmpeg")
-    if binary is None:
-        return CheckResult("ffmpeg", "fail", "ffmpeg not on PATH")
+    """Verify ffmpeg is callable and reports at least one usable video encoder."""
+    try:
+        binary = ffmpeg_bin()
+    except RuntimeError as e:
+        return CheckResult("ffmpeg", "fail", str(e))
 
     try:
-        out = subprocess.run(
-            [binary, "-hide_banner", "-encoders"],
+        subprocess.run(
+            [binary, "-hide_banner", "-version"],
             capture_output=True, text=True, check=True, timeout=10,
-        ).stdout
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        return CheckResult("ffmpeg", "fail", f"ffmpeg -encoders failed: {e}")
-
-    if REQUIRED_NVENC_ENCODER not in out:
-        # Fall back to hevc_nvenc, but warn — av1_nvenc is the recommended path.
-        if "hevc_nvenc" in out:
-            return CheckResult(
-                "ffmpeg", "warn",
-                f"{REQUIRED_NVENC_ENCODER} missing; only hevc_nvenc available. "
-                "Quality/efficiency will be lower. Rebuild ffmpeg with Video Codec SDK 13.0.",
-            )
-        return CheckResult(
-            "ffmpeg", "fail",
-            "No NVENC encoders detected. Rebuild ffmpeg with --enable-nvenc and the SDK 13.0 headers.",
         )
-    return CheckResult("ffmpeg", "ok", f"ffmpeg with {REQUIRED_NVENC_ENCODER} at {binary}")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return CheckResult("ffmpeg", "fail", f"ffmpeg -version failed: {e}")
+
+    try:
+        profile = select_encoder()
+    except RuntimeError as e:
+        return CheckResult("ffmpeg", "fail", str(e))
+
+    if profile.name in ("av1_nvenc", "hevc_nvenc", "h264_nvenc"):
+        return CheckResult("ffmpeg", "ok", f"{binary} → encoder={profile.name} (NVENC)")
+    if profile.name == "libx264":
+        return CheckResult(
+            "ffmpeg", "warn",
+            f"{binary} → encoder={profile.name} (CPU). Software encode works but is "
+            "slower than NVENC. To enable NVENC, run inside the Docker image or "
+            "install a system ffmpeg built with --enable-nvenc.",
+        )
+    return CheckResult(
+        "ffmpeg", "warn",
+        f"{binary} → encoder={profile.name} (suboptimal — install ffmpeg with libx264 or NVENC).",
+    )
 
 
 def check_python() -> CheckResult:
-    """3.11 only — 3.12 lacks PyTorch nightly binaries as of writing."""
+    """Project supports 3.11 and 3.12 (per pyproject)."""
     import sys
     major, minor = sys.version_info[:2]
-    if (major, minor) != (3, 11):
+    if (major, minor) not in {(3, 11), (3, 12)}:
         return CheckResult(
             "python", "warn",
-            f"Python {major}.{minor} detected; project is pinned to 3.11 because "
-            "PyTorch nightly cu128 ships 3.11 wheels.",
+            f"Python {major}.{minor} detected; project is tested on 3.11 and 3.12.",
         )
     return CheckResult("python", "ok", f"Python {major}.{minor}")
 
