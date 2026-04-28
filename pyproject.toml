@@ -29,6 +29,9 @@ dependencies = [
     "pyyaml>=6.0",
     "rich>=13.7",
     "ffmpeg-python>=0.2.0",
+    "imageio-ffmpeg>=0.5",   # static ffmpeg binary fallback (no system ffmpeg required)
+    "hf_transfer>=0.1",      # fast HF downloads via xet protocol (used when HF_HUB_ENABLE_HF_TRANSFER=1)
+    "torchcodec>=0.4",       # audio save backend ace-step uses (save_with_torchcodec)
     "numpy>=1.26",
     "pillow>=10.2",
 ]

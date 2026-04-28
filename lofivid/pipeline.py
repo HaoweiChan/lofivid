@@ -16,6 +16,7 @@ import logging
 import time
 from pathlib import Path
 
+from lofivid._memcap import collect_between_stages
 from lofivid.cache import Cache, content_hash
 from lofivid.compose import ffmpeg_ops, overlays
 from lofivid.compose.ffmpeg_ops import EncodeSettings
@@ -47,7 +48,9 @@ def generate(config_path: Path, cache_dir: Path, output_dir: Path) -> Path:
     run_cache = Cache(cache_dir / cfg.run_id)
 
     music_path = _do_music(cfg, run_cache, _make_music_backend(cfg))
+    collect_between_stages("music")
     clips = _do_visuals(cfg, run_cache, *_make_visual_backends(cfg))
+    collect_between_stages("visuals")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{cfg.run_id}.mp4"
@@ -250,7 +253,11 @@ def _make_visual_backends(cfg: Config) -> tuple[KeyframeBackend, ParallaxBackend
     # Allow per-config LoRA override
     loras = [(l.name, l.weight) for l in cfg.visuals.loras] or spec.loras
     return (
-        SDXLKeyframeBackend(model_id=spec.model_id, loras=loras),
+        SDXLKeyframeBackend(
+            model_id=spec.model_id,
+            loras=loras,
+            negative_prompt=spec.negative_prompt,
+        ),
         DepthFlowBackend(),
     )
 

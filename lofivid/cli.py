@@ -15,6 +15,29 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+def _apply_blackwell_env_defaults() -> None:
+    """Apply env-var workarounds for the WSL2 + RTX 50 series + PyTorch nightly stack.
+
+    These are no-ops on other configurations (CUDA driver ignores unknown vars).
+    Set BEFORE torch is first imported — that's why this runs at module load.
+    """
+    import os
+    os.environ.setdefault(
+        # Default-on: PyTorch's expandable allocator handles the bogus
+        # "non-PyTorch memory = 17 EiB" reading we see on WSL2 + sm_120.
+        "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True",
+    )
+    os.environ.setdefault(
+        # flash-attn / xformers don't support sm_120 yet (April 2026).
+        "PYTORCH_DISABLE_FLASH_ATTENTION", "1",
+    )
+    os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+    # HF download speed-up (requires hf_transfer pkg, included in pyproject).
+    os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+
+
+_apply_blackwell_env_defaults()
+
 app = typer.Typer(
     name="lofivid",
     help="Generate AI lofi music videos locally on RTX 5070 Ti (Blackwell sm_120).",
@@ -36,8 +59,16 @@ def _setup_logging(verbose: bool) -> None:
 @app.callback()
 def _root(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug-level logs"),
+    memory_cap_gb: float = typer.Option(
+        12.0, "--memory-cap-gb",
+        help="Soft cap on Python heap (RLIMIT_DATA) + RSS watchdog. "
+        "Set 0 to disable. WSL2 freezes when the pipeline exceeds the WSL "
+        "allocation; this gives an early WARN before the system locks up.",
+    ),
 ) -> None:
     _setup_logging(verbose)
+    from lofivid._memcap import apply_memory_cap
+    apply_memory_cap(memory_cap_gb if memory_cap_gb > 0 else None)
 
 
 @app.command("verify-env")
