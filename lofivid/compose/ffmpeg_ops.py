@@ -5,15 +5,18 @@ Implementation notes:
 - We avoid Remotion (no GPU encode path, browser-rendered).
 - ffmpeg-python is used for filter graph composition; raw subprocess.run
   is used for final encode where we want explicit control.
+- Encoder is auto-probed via lofivid._ffmpeg.select_encoder() so Docker
+  (NVENC av1) and host-mode (libx264) both work without code changes.
 """
 
 from __future__ import annotations
 
 import logging
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from lofivid._ffmpeg import EncoderProfile, ffmpeg_bin, ffprobe_bin, select_encoder
 from lofivid.compose.timeline import ScheduledScene
 
 log = logging.getLogger(__name__)
@@ -21,32 +24,36 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class EncodeSettings:
-    """av1_nvenc settings — Blackwell-optimised.
+    """Resolution / fps / audio-codec settings; encoder is auto-probed.
 
-    cq=28 is a lofi-appropriate quality target: visually lossless for
-    soft, gradient-heavy content. preset=p4 balances speed and quality.
-    Avoid combining hevc_nvenc + tune=uhq + highbitdepth on RTX 50 series
-    (known artifact bug).
+    cq=28 is a lofi-appropriate quality target (visually lossless for
+    soft, gradient-heavy content). The NVENC vs libx264 differences are
+    abstracted away in `_ffmpeg.select_encoder` — see that module for the
+    exact flag bundles.
     """
-    encoder: str = "av1_nvenc"
-    preset: str = "p4"
-    cq: int = 28
     fps: int = 24
     width: int = 1920
     height: int = 1080
+    cq: int = 28
+    preset: str = "p4"
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
+    # Override for testing or pinning a specific encoder profile.
+    encoder_override: EncoderProfile | None = field(default=None)
+
+    def encoder(self) -> EncoderProfile:
+        return self.encoder_override or select_encoder(self.cq, self.preset)
 
 
 def loop_clip_to_duration(src: Path, target_seconds: float, dst: Path, fps: int) -> Path:
-    """Loop a short clip to fill `target_seconds`, encoded losslessly to a temp file.
+    """Loop a short clip to fill `target_seconds`, using stream copy where possible.
 
     Used to extend a 30-sec parallax loop into a multi-minute scene.
     `-stream_loop -1` plus `-t` does this in a single pass without RAM.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+        ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning",
         "-stream_loop", "-1",
         "-i", str(src),
         "-t", f"{target_seconds:.3f}",
@@ -76,7 +83,7 @@ def concat_with_crossfades(
     offset times which timeline.schedule() pre-computes.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd: list[str] = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "warning"]
+    cmd: list[str] = [ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning"]
 
     # Inputs: one per scene clip + music + optional overlays.
     for s in scenes:
@@ -137,14 +144,13 @@ def concat_with_crossfades(
     else:
         a_out = f"[{audio_idx}:a]"
 
+    profile = settings.encoder()
     cmd.extend([
         "-filter_complex", ";".join(vf_parts),
         "-map", v_out, "-map", a_out,
-        "-c:v", settings.encoder,
-        "-preset", settings.preset,
-        "-tune", "hq",
-        "-cq", str(settings.cq),
-        "-pix_fmt", "yuv420p",
+        "-c:v", profile.name,
+        *profile.extra_flags,
+        "-pix_fmt", profile.pix_fmt,
         "-c:a", settings.audio_codec,
         "-b:a", settings.audio_bitrate,
         "-movflags", "+faststart",
@@ -153,7 +159,7 @@ def concat_with_crossfades(
     ])
 
     log.info("Composing → %s (%dx%d @ %dfps, encoder=%s)",
-             output_path, settings.width, settings.height, settings.fps, settings.encoder)
+             output_path, settings.width, settings.height, settings.fps, profile.name)
     log.debug("ffmpeg cmd: %s", " ".join(cmd))
     subprocess.run(cmd, check=True)
     return output_path
@@ -161,9 +167,32 @@ def concat_with_crossfades(
 
 def probe_duration_seconds(path: Path) -> float:
     """Lightweight duration probe via ffprobe."""
+    try:
+        binary = ffprobe_bin()
+    except RuntimeError:
+        # ffprobe missing (e.g. imageio-ffmpeg-only setup): parse `ffmpeg -i` output
+        return _probe_duration_via_ffmpeg(path)
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+        [binary, "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     return float(out) if out else 0.0
+
+
+def _probe_duration_via_ffmpeg(path: Path) -> float:
+    """Parse `Duration: HH:MM:SS.ms` from ffmpeg stderr when ffprobe is unavailable."""
+    out = subprocess.run(
+        [ffmpeg_bin(), "-hide_banner", "-i", str(path)],
+        capture_output=True, text=True, check=False,
+    ).stderr
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith("Duration:"):
+            try:
+                hms = s.split("Duration:", 1)[1].split(",", 1)[0].strip()
+                h, m, sec = hms.split(":")
+                return int(h) * 3600 + int(m) * 60 + float(sec)
+            except (ValueError, IndexError):
+                pass
+    return 0.0
