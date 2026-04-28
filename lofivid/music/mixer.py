@@ -13,6 +13,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from lofivid._ffmpeg import ffmpeg_bin
 from lofivid.music.base import GeneratedTrack
 
 log = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def mix_tracks(
         # No mixing needed; just normalise loudness and copy.
         return _normalise_and_write(tracks[0].path, output_path, settings)
 
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "warning"]
+    cmd = [ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning"]
     for t in tracks:
         cmd.extend(["-i", str(t.path)])
 
@@ -89,7 +90,7 @@ def mix_tracks(
 
 def _normalise_and_write(src: Path, dst: Path, settings: MixSettings) -> Path:
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+        ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning",
         "-i", str(src),
         "-af", f"loudnorm=I={settings.target_lufs}:TP=-1.5:LRA=11",
         "-ar", str(settings.sample_rate),
