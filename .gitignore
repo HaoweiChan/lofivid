@@ -19,13 +19,17 @@ venv/
 cache/
 output/
 models/
+previews/
+assets/
 *.wav
 *.mp3
 *.mp4
 !tests/fixtures/**/*.wav
 !tests/fixtures/**/*.mp4
-!assets/**/*.wav
-!assets/**/*.mp4
+
+# Claude Code / OMC
+.claude/
+.omc/
 
 # Editor / OS
 .vscode/
