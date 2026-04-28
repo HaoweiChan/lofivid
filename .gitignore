@@ -31,6 +31,10 @@ assets/
 .claude/
 .omc/
 
+# Local-only planning docs (not for version control)
+PLAN.md
+HOST_MODE.md
+
 # Editor / OS
 .vscode/
 .idea/
