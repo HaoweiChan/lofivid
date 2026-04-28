@@ -6,26 +6,48 @@ Local, fully open-source AI lofi music-video generator. Composes:
 - **Visuals** — SDXL/Animagine keyframes → [DepthFlow](https://github.com/BrokenSource/DepthFlow) parallax loops → optional [LTX-Video](https://github.com/Lightricks/LTX-Video) motion details and [Wan 2.2](https://github.com/Wan-Video/Wan2.2) hero scenes.
 - **Composition** — FFmpeg (`av1_nvenc`) muxing music, video, rain overlay, vinyl crackle, and EBU R128 loudness normalisation.
 
-Designed for **WSL2 + NVIDIA RTX 5070 Ti** (Blackwell sm_120, 16 GB). Everything runs inside a Docker image because PyTorch stable does not yet support sm_120; we pin a known-working nightly + CUDA 12.8 toolkit.
+Designed for **WSL2 + NVIDIA RTX 5070 Ti** (Blackwell sm_120, 16 GB). PyTorch stable does not yet support sm_120, so we pin a known-working nightly + CUDA 12.8 toolkit. Two runtime modes are supported:
+
+| Mode | When to use |
+|---|---|
+| **Host-mode** (`.venv`) | Docker Desktop not running; natively installed toolchain. Uses libx264 software encode. |
+| **Docker** (`docker compose`) | Canonical setup. Uses `av1_nvenc` hardware encode, Python 3.11, NVENC-tuned FFmpeg. |
 
 All shipped components are commercial-use-friendly (Apache 2.0 / MIT / CreativeML Open RAIL++-M). Run `lofivid licenses` before publishing for a per-asset audit.
 
-## Quickstart
+## Quickstart — host-mode (no Docker)
 
 ```bash
-# 1. Verify host (Windows side): NVIDIA driver 572+ installed, WSL2 enabled.
-nvidia-smi   # should report your RTX 5070 Ti
+# 1. Activate the venv (PyTorch nightly cu128 + ACE-Step + DepthFlow)
+source .venv/bin/activate
+
+# 2. Sanity-check GPU + encoder
+lofivid verify-env
+
+# 3. 5-minute demo render (fastest end-to-end test)
+lofivid generate --config configs/demo_5min_anime.yaml
+
+# 4. Scale up as desired
+lofivid generate --config configs/medium_30min_anime.yaml
+lofivid generate --config configs/anime_rainy_window.yaml
+```
+
+## Quickstart — Docker (canonical)
+
+```bash
+# 1. Verify host: NVIDIA driver 572+ installed, Docker Desktop running, WSL2 enabled.
+nvidia-smi
 
 # 2. Build the image (~20 min the first time)
 docker compose build
 
-# 3. Sanity-check the GPU + NVENC paths inside the container
+# 3. Sanity-check GPU + NVENC inside the container
 docker compose run --rm lofivid verify-env
 
-# 4. Generate a 30-second smoke render to prove the pipeline works
+# 4. Smoke render
 docker compose run --rm lofivid generate --config configs/smoke_30sec.yaml
 
-# 5. Generate a full 2-hour anime lofi video
+# 5. Full 2-hour anime lofi video
 docker compose run --rm lofivid generate --config configs/anime_rainy_window.yaml
 ```
 
@@ -49,7 +71,7 @@ lofivid/
 └── tests/                 # env/cache/tracklist/mixer + 30-sec smoke render
 ```
 
-See [`PLAN.md`](./PLAN.md) for the full design rationale and a current implementation-status checklist (what's done in Phase 1, what's left for Phases 2–4, and exact handover commands).
+See `CLAUDE.md` for current implementation status and development conventions.
 
 ## License
 
