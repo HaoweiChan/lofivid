@@ -7,6 +7,10 @@ Implementation notes:
   is used for final encode where we want explicit control.
 - Encoder is auto-probed via lofivid._ffmpeg.select_encoder() so Docker
   (NVENC av1) and host-mode (libx264) both work without code changes.
+
+The compose stage's overlay order is fixed (no config knob): rain → brand
+→ HUD per-track → waveform. This matches how the reference channels read
+visually; reordering it makes the typography fight the music-reactive band.
 """
 
 from __future__ import annotations
@@ -17,7 +21,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lofivid._ffmpeg import EncoderProfile, ffmpeg_bin, ffprobe_bin, select_encoder
+from lofivid.compose.hud import HUDOverlay
 from lofivid.compose.timeline import ScheduledScene
+from lofivid.compose.waveform import build_waveform_filter, overlay_y_expr
+from lofivid.styles.schema import WaveformSpec
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +45,6 @@ class EncodeSettings:
     preset: str = "p4"
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
-    # Override for testing or pinning a specific encoder profile.
     encoder_override: EncoderProfile | None = field(default=None)
 
     def encoder(self) -> EncoderProfile:
@@ -46,11 +52,7 @@ class EncodeSettings:
 
 
 def loop_clip_to_duration(src: Path, target_seconds: float, dst: Path, fps: int) -> Path:
-    """Loop a short clip to fill `target_seconds`, using stream copy where possible.
-
-    Used to extend a 30-sec parallax loop into a multi-minute scene.
-    `-stream_loop -1` plus `-t` does this in a single pass without RAM.
-    """
+    """Loop a short clip to fill `target_seconds`, using stream copy where possible."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning",
@@ -58,7 +60,7 @@ def loop_clip_to_duration(src: Path, target_seconds: float, dst: Path, fps: int)
         "-i", str(src),
         "-t", f"{target_seconds:.3f}",
         "-r", str(fps),
-        "-c:v", "copy",          # losslessly extend; encode happens later
+        "-c:v", "copy",
         "-an",
         str(dst),
     ]
@@ -75,17 +77,41 @@ def concat_with_crossfades(
     overlay_opacity: float = 0.15,
     overlay_audio: Path | None = None,
     overlay_audio_gain_db: float = -28.0,
+    *,
+    brand_layer: Path | None = None,
+    hud_overlays: list[HUDOverlay] | None = None,
+    waveform_spec: WaveformSpec | None = None,
+    waveform_duotone: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None,
 ) -> Path:
     """Final pass: chain scene clips with xfade, layer overlays, mux audio, encode.
 
-    For 1-2 hour outputs we let FFmpeg stream rather than holding the timeline
-    in RAM. The xfade filter is the load-bearing piece — it requires absolute
-    offset times which timeline.schedule() pre-computes.
+    Overlay order (fixed): rain → brand → HUD per-track → waveform → encode.
+
+    Parameters
+    ----------
+    brand_layer
+        Path to a frame-sized transparent PNG produced by
+        `lofivid.compose.brand.render_brand_layer`. None = no brand overlay.
+    hud_overlays
+        Per-track now-playing badges. Each HUDOverlay has its own visibility
+        window expressed via `enable='between(t,start,end)'`. None or [] = no HUD.
+    waveform_spec
+        Active style's waveform configuration. None = no waveform.
+    waveform_duotone
+        Required when `waveform_spec.color_source` is duotone-derived; the
+        StyleSpec-level validator already enforces this at config-load time.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    hud_overlays = hud_overlays or []
     cmd: list[str] = [ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "warning"]
 
-    # Inputs: one per scene clip + music + optional overlays.
+    # Inputs in fixed order. The stage downstream relies on the indices:
+    #   [0..N-1]      scene clips
+    #   [N]           music
+    #   [N+1]         (optional) rain overlay video
+    #   [N+1 or 2]    (optional) vinyl-crackle audio
+    #   then          (optional) brand PNG
+    #   then          (optional) one HUD PNG per track
     for s in scenes:
         cmd.extend(["-i", str(s.clip_path)])
     cmd.extend(["-i", str(audio_path)])
@@ -93,27 +119,38 @@ def concat_with_crossfades(
         cmd.extend(["-stream_loop", "-1", "-i", str(overlay_video)])
     if overlay_audio is not None:
         cmd.extend(["-stream_loop", "-1", "-i", str(overlay_audio)])
+    if brand_layer is not None:
+        cmd.extend(["-loop", "1", "-i", str(brand_layer)])
+    for h in hud_overlays:
+        cmd.extend(["-loop", "1", "-i", str(h.png_path)])
 
     n_scenes = len(scenes)
     audio_idx = n_scenes
-    overlay_v_idx = n_scenes + 1 if overlay_video is not None else None
-    overlay_a_idx = n_scenes + (2 if overlay_video is not None else 1) if overlay_audio is not None else None
+    cursor = n_scenes + 1
+    overlay_v_idx = cursor if overlay_video is not None else None
+    if overlay_video is not None:
+        cursor += 1
+    overlay_a_idx = cursor if overlay_audio is not None else None
+    if overlay_audio is not None:
+        cursor += 1
+    brand_idx = cursor if brand_layer is not None else None
+    if brand_layer is not None:
+        cursor += 1
+    hud_idx_start = cursor  # contiguous range of length len(hud_overlays)
 
-    # Build the video filter chain
+    # ---- video filter chain ----
     vf_parts: list[str] = []
-    # Scale + pad each scene to the target resolution
     for i in range(n_scenes):
         vf_parts.append(
             f"[{i}:v]scale={settings.width}:{settings.height}:force_original_aspect_ratio=decrease,"
             f"pad={settings.width}:{settings.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={settings.fps}[v{i}]"
         )
 
-    # Chain xfades between scenes
     if n_scenes == 1:
         vf_parts.append("[v0]copy[vbase]")
     else:
         prev_label = "[v0]"
-        cum_offset = scenes[0].duration  # offset for next xfade = current scene length
+        cum_offset = scenes[0].duration
         for i in range(1, n_scenes):
             out_label = f"[vc{i}]" if i < n_scenes - 1 else "[vbase]"
             xfade_d = scenes[i].crossfade_in
@@ -123,20 +160,54 @@ def concat_with_crossfades(
             )
             cum_offset += scenes[i].duration - xfade_d
             prev_label = out_label
-        # vbase now holds the full chained video stream
 
-    # Optional rain overlay
+    # Each layer reads from the previous label and writes to the next.
+    # Track the current label as we layer overlays on.
+    current = "[vbase]"
+
+    # 1. rain overlay
     if overlay_v_idx is not None:
         vf_parts.append(
             f"[{overlay_v_idx}:v]scale={settings.width}:{settings.height},format=yuva420p,"
             f"colorchannelmixer=aa={overlay_opacity}[ov]"
         )
-        vf_parts.append("[vbase][ov]overlay=shortest=1[vfinal]")
-        v_out = "[vfinal]"
-    else:
-        v_out = "[vbase]"
+        vf_parts.append(f"{current}[ov]overlay=shortest=1[vrain]")
+        current = "[vrain]"
 
-    # Audio: optional vinyl-crackle overlay mixed with music
+    # 2. brand overlay (full-frame transparent PNG, one input)
+    if brand_idx is not None:
+        vf_parts.append(f"[{brand_idx}:v]format=yuva420p,setpts=PTS-STARTPTS[brand]")
+        vf_parts.append(f"{current}[brand]overlay=0:0:shortest=1[vbrand]")
+        current = "[vbrand]"
+
+    # 3. HUD overlays — one per track, each with its own enable window
+    for i, h in enumerate(hud_overlays):
+        in_idx = hud_idx_start + i
+        # Format the PNG to yuva so the alpha channel is honoured.
+        vf_parts.append(f"[{in_idx}:v]format=yuva420p,setpts=PTS-STARTPTS[hud{i}]")
+        next_label = f"[vhud{i}]" if i < len(hud_overlays) - 1 or True else "[vfinal_pre_wave]"
+        vf_parts.append(
+            f"{current}[hud{i}]overlay={h.x_expr}:{h.y_expr}:"
+            f"enable='between(t,{h.start_seconds:.3f},{h.end_seconds:.3f})':shortest=1{next_label}"
+        )
+        current = next_label
+
+    # 4. waveform overlay — splice in the showwaves fragment + a final overlay step
+    if waveform_spec is not None:
+        wave = build_waveform_filter(
+            waveform_spec, waveform_duotone,
+            frame_w=settings.width, fps=settings.fps,
+            audio_idx=audio_idx, output_label="[wave]",
+        )
+        if wave is not None:
+            vf_parts.append(wave.filter_fragment)
+            y_expr = overlay_y_expr(wave.position, settings.height, waveform_spec.height_px)
+            vf_parts.append(f"{current}[wave]overlay=0:{y_expr}:shortest=1[vfinal]")
+            current = "[vfinal]"
+
+    v_out = current
+
+    # ---- audio chain (vinyl + music) ----
     if overlay_a_idx is not None:
         vf_parts.append(f"[{overlay_a_idx}:a]volume={overlay_audio_gain_db}dB[oa]")
         vf_parts.append(f"[{audio_idx}:a][oa]amix=inputs=2:duration=first:dropout_transition=0[aout]")
@@ -170,7 +241,6 @@ def probe_duration_seconds(path: Path) -> float:
     try:
         binary = ffprobe_bin()
     except RuntimeError:
-        # ffprobe missing (e.g. imageio-ffmpeg-only setup): parse `ffmpeg -i` output
         return _probe_duration_via_ffmpeg(path)
     out = subprocess.run(
         [binary, "-v", "error", "-show_entries", "format=duration",

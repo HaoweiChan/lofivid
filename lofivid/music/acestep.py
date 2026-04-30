@@ -53,9 +53,9 @@ def _install_torchaudio_save_shim() -> None:
     Idempotent; safe to call multiple times. No-op if torchaudio isn't installed.
     """
     try:
+        import soundfile as sf
         import torch
         import torchaudio
-        import soundfile as sf
     except ImportError:
         return
 

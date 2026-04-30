@@ -66,10 +66,9 @@ class SDXLKeyframeBackend(KeyframeBackend):
         pipe.to("cuda")
         # PyTorch SDPA on Blackwell sm_120 — flash-attn / xformers don't support
         # sm_120 yet (April 2026). The default attention impl works fine.
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             pipe.set_progress_bar_config(disable=True)
-        except Exception:
-            pass
 
         # Apply LoRAs (if any). Each entry is (huggingface_repo_or_path, weight).
         adapter_names: list[str] = []
