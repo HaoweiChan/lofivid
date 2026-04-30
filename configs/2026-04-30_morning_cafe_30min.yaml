@@ -1,0 +1,24 @@
+run_id: morning_cafe_30min_v1
+style_ref: morning_cafe
+duration_minutes: 30
+output_resolution: [1920, 1080]
+fps: 24
+seed: 42
+
+music:
+  track_count: 6
+  track_seconds_range: [280, 320]
+  crossfade_seconds: 6
+  target_lufs: -14
+
+visuals:
+  scene_count: 6
+  scene_seconds: 300
+  parallax_loop_seconds: 30
+  premium_scenes: 0
+
+overlays:
+  rain_video: null
+  rain_opacity: 0.0
+  vinyl_crackle: null
+  vinyl_gain_db: -28

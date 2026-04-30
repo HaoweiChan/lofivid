@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+
 def _apply_blackwell_env_defaults() -> None:
     """Apply env-var workarounds for the WSL2 + RTX 50 series + PyTorch nightly stack.
 
@@ -147,6 +148,7 @@ def licenses() -> None:
         ("ACE-Step 1.5 (weights)", "verify per-release", "Check repo at install time"),
         ("Suno (cloud)", "see notes", "CLOUD service. AI-only output is NOT copyrightable in the US."),
         ("Suno API wrapper (3rd-party)", "wrapper-dependent", "sunoapi.org/PiAPI/AIML — verify ToS yourself"),
+        ("Library backend (Epidemic Sound etc.)", "subscription-dependent", "Per-channel licence; see assets/music/README.md"),
         ("Animagine XL 4 (anime preset)", "CreativeML Open RAIL++-M", "Commercial OK with content rules"),
         ("SDXL base 1.0 (photo preset)", "CreativeML Open RAIL++-M", "Commercial OK with content rules"),
         ("FLUX.2 Klein 4B", "Apache-2.0", "2025-11-25 release; commercial-safe upgrade from SDXL"),
@@ -159,6 +161,9 @@ def licenses() -> None:
         ("Wan 2.2 (optional)", "Apache-2.0", "Premium animated scenes"),
         ("FFmpeg", "LGPL/GPL (build-dependent)", "Video composition"),
         ("Diffusers / Transformers", "Apache-2.0", "Inference libraries"),
+        ("Playfair Display Bold (font)", "SIL OFL 1.1", "Display serif for titles. Bundled at assets/fonts/."),
+        ("IBM Plex Sans Regular + Bold (font)", "SIL OFL 1.1", "Body / kicker / counter / artist text."),
+        ("Noto Sans CJK TC Bold (font)", "SIL OFL 1.1", "Traditional-Chinese fallback for the CJK subtitle line."),
         ("Bundled CC0 assets", "CC0", "See assets/ directory"),
     ]
     table = Table(title="lofivid third-party licenses")

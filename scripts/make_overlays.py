@@ -28,7 +28,6 @@ sys.path.insert(0, str(ROOT))
 
 from lofivid._ffmpeg import ffmpeg_bin  # noqa: E402
 
-
 RAIN_OUT = ROOT / "assets/overlays/rain_window_loop.mp4"
 VINYL_OUT = ROOT / "assets/audio/vinyl_crackle_loop.wav"
 
