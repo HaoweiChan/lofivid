@@ -184,9 +184,21 @@ class ACEStepBackend(MusicBackend):
             )
 
         actual = _probe_duration_seconds(out_path)
+
+        # Best-effort title from mood + first non-mood prompt tag.
+        mood = (spec.mood or "").strip() if hasattr(spec, "mood") else ""
+        title_parts: list[str] = []
+        if mood:
+            title_parts.append(mood.title())
+        parts = [p.strip() for p in spec.prompt.split(",") if p.strip()]
+        if len(parts) > 1 and parts[1] != mood:
+            title_parts.append(parts[1].title())
+        title = " — ".join(title_parts) if title_parts else f"Track {spec.track_index + 1:02d}"
+
         return GeneratedTrack(
             spec=spec, path=out_path, sample_rate=44100,
             actual_duration_seconds=actual,
+            title=title, artist=None,
         )
 
 

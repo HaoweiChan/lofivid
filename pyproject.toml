@@ -34,6 +34,7 @@ dependencies = [
     "torchcodec>=0.4",       # audio save backend ace-step uses (save_with_torchcodec)
     "numpy>=1.26",
     "pillow>=10.2",
+    "mutagen>=1.47",
 ]
 
 [project.optional-dependencies]

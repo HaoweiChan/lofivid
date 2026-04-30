@@ -135,9 +135,11 @@ class SunoMusicBackend(MusicBackend):
             tmp_path.unlink(missing_ok=True)
 
         actual = _probe_duration_seconds(out_path)
+        title = f"Track {spec.track_index + 1:02d}"
         return GeneratedTrack(
             spec=spec, path=out_path, sample_rate=44100,
             actual_duration_seconds=actual,
+            title=title, artist="Suno AI",
         )
 
     # ---------- API plumbing --------------------------------------------

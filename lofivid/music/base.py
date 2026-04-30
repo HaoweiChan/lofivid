@@ -30,6 +30,7 @@ class TrackSpec:
     duration_seconds: int
     seed: int
     lyrics: str | None = None
+    mood: str | None = None
 
     def cache_key(self) -> dict:
         return {
@@ -39,6 +40,7 @@ class TrackSpec:
             "duration_seconds": self.duration_seconds,
             "seed": self.seed,
             "lyrics": self.lyrics,
+            "mood": self.mood,
         }
 
 
@@ -48,6 +50,8 @@ class GeneratedTrack:
     path: Path
     sample_rate: int
     actual_duration_seconds: float
+    title: str = ""
+    artist: str | None = None
 
 
 class MusicBackend(ABC):
