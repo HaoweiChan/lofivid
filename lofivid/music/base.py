@@ -18,6 +18,10 @@ class TrackSpec:
 
     `prompt` is the full prompt string; `bpm`, `key`, etc. are duplicated
     in dataclass form so the cache key is structured (not just a free-text hash).
+
+    `lyrics` is optional. When None (the default) we ask the backend for a
+    fully-instrumental render — this is the only mode ACE-Step supports
+    locally. Backends that accept lyrics (Suno) treat None as "instrumental".
     """
     track_index: int
     prompt: str
@@ -25,6 +29,7 @@ class TrackSpec:
     key: str
     duration_seconds: int
     seed: int
+    lyrics: str | None = None
 
     def cache_key(self) -> dict:
         return {
@@ -33,6 +38,7 @@ class TrackSpec:
             "key": self.key,
             "duration_seconds": self.duration_seconds,
             "seed": self.seed,
+            "lyrics": self.lyrics,
         }
 
 

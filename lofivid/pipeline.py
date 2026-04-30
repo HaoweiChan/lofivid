@@ -37,6 +37,8 @@ from lofivid.visuals.base import (
 )
 from lofivid.visuals.depthflow import DepthFlowBackend
 from lofivid.visuals.keyframes import SDXLKeyframeBackend
+from lofivid.visuals.overlay_motion import OverlayMotionBackend
+from lofivid.visuals.unsplash import UnsplashKeyframeBackend
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +149,11 @@ def _do_visuals(
             height=preset.spec().height,
             seed=seeds.derive(f"visuals.keyframe.{i}"),
         )
-        key = content_hash({"backend": keyframe_backend.name, **spec.cache_key()})
+        # Allow the backend to inject extra cache-key contributions that
+        # depend on resolved external state (e.g. an Unsplash photo id).
+        # SDXL returns {} so the existing cache layout is unchanged.
+        extras = keyframe_backend.cache_key_extras(spec)
+        key = content_hash({"backend": keyframe_backend.name, **spec.cache_key(), **extras})
         cached = cache.get("keyframe", key)
         if cached is not None:
             from lofivid.visuals.base import GeneratedImage

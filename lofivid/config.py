@@ -24,17 +24,24 @@ class MusicVariation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mood: str
     instruments: list[str] = Field(default_factory=list)
+    # Optional per-mood lyric fragment — only consulted when MusicConfig.backend == "suno".
+    # When None on every variation, all Suno tracks are rendered instrumental.
+    lyrics: str | None = None
 
 
 class MusicConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    backend: Literal["acestep", "musicgen"] = "acestep"
+    backend: Literal["acestep", "musicgen", "suno"] = "acestep"
     track_count: int = Field(..., ge=1, le=200)
     track_seconds_range: tuple[int, int] = (300, 420)
     crossfade_seconds: float = Field(6.0, ge=0.0, le=20.0)
     target_lufs: float = Field(-14.0, ge=-30.0, le=-6.0)
     anchor: MusicAnchor
     variations: list[MusicVariation] = Field(..., min_length=1)
+    # Suno-only: pinned model version. The user MUST commit to a version per
+    # run — don't auto-upgrade. Surfaced as a cache-key contribution via the
+    # backend's `name` (e.g. "suno-v3.5") so swapping versions invalidates.
+    suno_model_version: str = "v3.5"
 
 
 class LoraSpec(BaseModel):
@@ -52,6 +59,19 @@ class VisualsConfig(BaseModel):
     premium_scenes: int = Field(0, ge=0)
     keyframe_prompt_template: str = ""
     loras: list[LoraSpec] = Field(default_factory=list)
+    # Backend selection — defaults preserve the current SDXL→DepthFlow pipeline
+    # so existing configs render byte-identically. `flux_klein` and
+    # `z_image_turbo` are 2025+ commercial-OK upgrades — see MODEL_OPTIONS.md.
+    keyframe_backend: Literal["sdxl", "unsplash", "flux_klein", "z_image_turbo"] = "sdxl"
+    parallax_backend: Literal["depthflow", "overlay_motion"] = "depthflow"
+    # Only consulted when parallax_backend == "overlay_motion".
+    motion_type: Literal["slow_zoom", "dust_motes", "light_flicker", "none"] = "slow_zoom"
+    # Optional per-config duotone override. Format: [[R,G,B], [R,G,B]] for
+    # (shadow, highlight). When None (default) the active preset's own
+    # `duotone` field is used; if both are None, no grading is applied.
+    # Only consulted by keyframe backends that perform colour grading
+    # (currently the Unsplash backend).
+    duotone: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
 
 
 class OverlaysConfig(BaseModel):
@@ -76,7 +96,7 @@ class Config(BaseModel):
     overlays: OverlaysConfig = Field(default_factory=OverlaysConfig)
 
     @model_validator(mode="after")
-    def _check_duration_matches_visuals(self) -> "Config":
+    def _check_duration_matches_visuals(self) -> Config:
         target_seconds = self.duration_minutes * 60
         visuals_seconds = self.visuals.scene_count * self.visuals.scene_seconds
         # Allow 5% slack — the timeline scheduler will pad/trim as needed.
