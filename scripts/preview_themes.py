@@ -20,8 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -30,6 +29,10 @@ sys.path.insert(0, str(ROOT))
 from lofivid.cli import _apply_blackwell_env_defaults  # noqa: E402
 
 _apply_blackwell_env_defaults()
+
+# Re-export the post-process helpers from the canonical location so the
+# preview_greenhouse_cast.py script (and any external imports) keep working.
+from lofivid.visuals._grading import duotone, paper_border  # noqa: E402,F401
 
 PREVIEW_DIR = ROOT / "previews"
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
@@ -93,37 +96,7 @@ THEMES: list[Theme] = [
 
 
 # ---------- post-process ------------------------------------------------------
-
-def duotone(img: Image.Image, shadow_rgb: tuple[int, int, int],
-            highlight_rgb: tuple[int, int, int]) -> Image.Image:
-    """Map an image onto a 2-colour gradient (shadow → highlight)."""
-    gray = np.asarray(img.convert("L"), dtype=np.float32) / 255.0
-    sh = np.array(shadow_rgb, dtype=np.float32)
-    hi = np.array(highlight_rgb, dtype=np.float32)
-    out = sh[None, None, :] * (1 - gray[..., None]) + hi[None, None, :] * gray[..., None]
-    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
-
-
-def paper_border(img: Image.Image, border_pct: float = 0.06,
-                 paper_rgb: tuple[int, int, int] = (236, 226, 200)) -> Image.Image:
-    """Wrap the image in a cream paper border with subtle grain."""
-    w, h = img.size
-    bw = int(min(w, h) * border_pct)
-    new_w, new_h = w + 2 * bw, h + 2 * bw
-    canvas = Image.new("RGB", (new_w, new_h), paper_rgb)
-    # Add subtle paper grain (very low-amplitude noise)
-    grain = np.random.normal(0, 6, (new_h, new_w, 3)).astype(np.int16)
-    arr = np.array(canvas, dtype=np.int16) + grain
-    canvas = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
-    canvas.paste(img, (bw, bw))
-    # Slight inner shadow on the image edge for tactile feel
-    shadow = Image.new("L", img.size, 0)
-    d = ImageDraw.Draw(shadow)
-    d.rectangle([(0, 0), img.size], outline=80, width=1)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(2))
-    canvas.paste((30, 22, 14), (bw, bw), shadow)
-    return canvas
-
+# `duotone` and `paper_border` are imported above from `lofivid.visuals._grading`.
 
 def grade(raw: Image.Image, theme: Theme) -> Image.Image:
     return paper_border(duotone(raw, *theme.duotone))
