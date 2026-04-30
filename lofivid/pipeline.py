@@ -250,6 +250,11 @@ def _do_compose(
 def _make_music_backend(cfg: Config) -> MusicBackend:
     if cfg.music.backend == "acestep":
         return ACEStepBackend()
+    if cfg.music.backend == "suno":
+        # Lazy import — keeps the host-mode startup path free of `requests`
+        # for users sticking with the local ACE-Step backend.
+        from lofivid.music.suno import SunoMusicBackend
+        return SunoMusicBackend(model_version=cfg.music.suno_model_version)
     raise ValueError(f"Unsupported music backend: {cfg.music.backend}")
 
 
@@ -257,15 +262,39 @@ def _make_visual_backends(cfg: Config) -> tuple[KeyframeBackend, ParallaxBackend
     preset = get_preset(cfg.visuals.preset)
     spec = preset.spec()
     # Allow per-config LoRA override
-    loras = [(l.name, l.weight) for l in cfg.visuals.loras] or spec.loras
-    return (
-        SDXLKeyframeBackend(
+    loras = [(lora.name, lora.weight) for lora in cfg.visuals.loras] or spec.loras
+
+    if cfg.visuals.keyframe_backend == "sdxl":
+        keyframe: KeyframeBackend = SDXLKeyframeBackend(
             model_id=spec.model_id,
             loras=loras,
             negative_prompt=spec.negative_prompt,
-        ),
-        DepthFlowBackend(),
-    )
+        )
+    elif cfg.visuals.keyframe_backend == "unsplash":
+        keyframe = UnsplashKeyframeBackend(
+            quality_suffix=spec.quality_suffix,
+            # YAML override > preset default > None (no grading).
+            duotone_pair=cfg.visuals.duotone or spec.duotone,
+        )
+    elif cfg.visuals.keyframe_backend == "flux_klein":
+        # Lazy import — diffusers versions that don't know FLUX.2 yet would
+        # raise at import time, blocking unrelated runs on legacy stacks.
+        from lofivid.visuals.flux_klein import FluxKleinKeyframeBackend
+        keyframe = FluxKleinKeyframeBackend()
+    elif cfg.visuals.keyframe_backend == "z_image_turbo":
+        from lofivid.visuals.z_image import ZImageTurboKeyframeBackend
+        keyframe = ZImageTurboKeyframeBackend()
+    else:
+        raise ValueError(f"Unsupported keyframe backend: {cfg.visuals.keyframe_backend}")
+
+    if cfg.visuals.parallax_backend == "depthflow":
+        parallax: ParallaxBackend = DepthFlowBackend()
+    elif cfg.visuals.parallax_backend == "overlay_motion":
+        parallax = OverlayMotionBackend(motion_type=cfg.visuals.motion_type)
+    else:
+        raise ValueError(f"Unsupported parallax backend: {cfg.visuals.parallax_backend}")
+
+    return keyframe, parallax
 
 
 def _resolve_overlay(p: Path | None, project_root: Path) -> Path | None:
