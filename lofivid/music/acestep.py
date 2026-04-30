@@ -199,3 +199,8 @@ def _probe_duration_seconds(path: Path) -> float:
     except Exception as e:
         log.warning("Could not probe duration of %s: %s", path, e)
         return 0.0
+
+
+from lofivid.music.registry import register as _register  # noqa: E402
+
+_register("acestep", ACEStepBackend)

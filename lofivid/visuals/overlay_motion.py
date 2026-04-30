@@ -231,3 +231,8 @@ class OverlayMotionBackend(ParallaxBackend):
             f"gblur=sigma=0.6[dust];"
             f"[base][dust]overlay=0:0:format=auto[out]"
         )
+
+
+from lofivid.visuals.registry import register_parallax as _register_parallax  # noqa: E402
+
+_register_parallax("overlay_motion", OverlayMotionBackend)
