@@ -65,6 +65,15 @@ class KeyframeBackend(ABC):
     @abstractmethod
     def generate(self, spec: KeyframeSpec, output_dir: Path) -> GeneratedImage: ...
 
+    def cache_key_extras(self, spec: KeyframeSpec) -> dict:
+        """Extra contributions to the keyframe cache key beyond `spec.cache_key()`.
+
+        Override when the backend resolves external state (e.g. an Unsplash
+        photo id) that should invalidate downstream stages when it changes.
+        Default returns {} so deterministic backends like SDXL stay unchanged.
+        """
+        return {}
+
     def warmup(self) -> None: return None
     def shutdown(self) -> None: return None
 
