@@ -1,0 +1,33 @@
+name: _smoke
+description: |
+  Internal smoke-style. Verifies the pipeline is alive end-to-end without
+  pulling library audio, fonts, or cloud APIs. Filename starts with "_" so
+  it sorts first and signals "not a real channel brand".
+
+preset: photo
+keyframe_backend: sdxl
+keyframe_prompt_template: empty cafe interior
+parallax_backend: overlay_motion
+motion_type: none
+duotone: null
+
+music_backend: acestep
+music_anchor:
+  bpm_range: [75, 80]
+  key_pool: [A minor]
+  style_tags: [lo-fi]
+music_variations:
+  - mood: smoke test
+    instruments: [piano]
+
+# Smoke verifies the pipeline; brand layers and HUD have their own unit tests.
+brand_layers: []
+
+hud:
+  enabled: false
+  font_path: assets/fonts/IBMPlexSans-Bold.ttf
+
+waveform:
+  enabled: false
+  color_source: fixed
+  fixed_color: '#FFFFFF'

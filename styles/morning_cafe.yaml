@@ -1,0 +1,86 @@
+name: morning_cafe
+description: |
+  Cafe afternoon jazz with vocals, photographic warm-cream visuals,
+  WORK CAFE JAZZ display title with Traditional Chinese subtitle line,
+  rust accent. Mirrors preview_workday_cafe.py's locked aesthetic.
+
+preset: photo
+keyframe_backend: unsplash
+keyframe_prompt_template: cafe interior warm light
+parallax_backend: overlay_motion
+motion_type: slow_zoom
+duotone: [[40, 22, 8], [244, 222, 184]]   # espresso → cream
+
+music_backend: library
+music_backend_params:
+  library_dir: assets/music/cafe_jazz
+music_anchor:
+  bpm_range: [78, 92]
+  key_pool: [F major, Bb major, Eb major, G minor]
+  style_tags: [jazz, vocal jazz, smooth jazz, lo-fi, vinyl crackle]
+music_variations:
+  - mood: cafe afternoon
+    instruments: [Rhodes, upright bass, brushed drums]
+  - mood: rainy window
+    instruments: [piano, double bass, soft kick]
+  - mood: late night booth
+    instruments: [muted trumpet, walking bass, hihat]
+  - mood: vinyl spin
+    instruments: [vibraphone, acoustic guitar, shaker]
+  - mood: latte art
+    instruments: [Wurlitzer, soft pads, brushes]
+  - mood: bookshelf hour
+    instruments: [piano, cello, light kick]
+
+brand_layers:
+  - text: "LOFIVID  ・  PLAYLIST"
+    font_path: assets/fonts/IBMPlexSans-Bold.ttf
+    size_pct: 0.022
+    color: "#281810"
+    position: top_centre
+    margin_pct: 0.06
+  - text: "WORK CAFE JAZZ"
+    font_path: assets/fonts/PlayfairDisplay-Bold.ttf
+    size_pct: 0.085
+    color: "#A8341E"
+    shadow_color: "#0000005A"
+    position: top_centre
+    margin_pct: 0.11
+  - text: "工作日   咖啡   爵士節奏"
+    font_path: assets/fonts/PlayfairDisplay-Bold.ttf
+    cjk_font_path: assets/fonts/NotoSansCJKtc-Bold.otf
+    size_pct: 0.062
+    color: "#A8341E"
+    position: top_centre
+    margin_pct: 0.22
+  - text: "01 cafe afternoon   /   02 rainy window   /   03 late night booth   /   04 vinyl spin   /   05 latte art   /   06 bookshelf hour"
+    font_path: assets/fonts/IBMPlexSans-Regular.ttf
+    size_pct: 0.022
+    color: "#3C281E"
+    position: bottom_centre
+    margin_pct: 0.045
+
+hud:
+  enabled: true
+  font_path: assets/fonts/IBMPlexSans-Bold.ttf
+  cjk_font_path: assets/fonts/NotoSansCJKtc-Bold.otf
+  title_size_pct: 0.028
+  artist_size_pct: 0.020
+  counter_size_pct: 0.018
+  text_color: "#FFFFFF"
+  panel_color: "#0A0A0A"
+  panel_opacity: 0.5
+  panel_padding_px: 14
+  corner: bottom_left
+  margin_pct: 0.04
+  show_track_counter: true
+  show_artist: true
+
+waveform:
+  enabled: true
+  mode: cline
+  height_px: 80
+  position: bottom
+  scale: sqrt
+  color_source: duotone_highlight
+  opacity: 0.55
