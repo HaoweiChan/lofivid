@@ -8,7 +8,6 @@ mood + instrumentation (variety).
 
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass
 
 from lofivid.config import MusicConfig
@@ -26,6 +25,7 @@ class TrackPlan:
     instruments: list[str]
     style_tags: list[str]
     duration_seconds: int
+    lyrics: str | None = None    # only populated for vocal-capable backends (Suno)
 
     def to_prompt(self) -> str:
         """Compose the natural-language prompt fed to ACE-Step.
@@ -62,6 +62,7 @@ def design_tracklist(cfg: MusicConfig, seeds: SeedRegistry) -> list[TrackPlan]:
             instruments=list(variation.instruments),
             style_tags=list(cfg.anchor.style_tags),
             duration_seconds=rng.randint(dur_lo, dur_hi),
+            lyrics=variation.lyrics,
         ))
 
     return plans
@@ -77,6 +78,7 @@ def plans_to_specs(plans: list[TrackPlan], seeds: SeedRegistry) -> list[TrackSpe
             key=p.key,
             duration_seconds=p.duration_seconds,
             seed=seeds.derive(f"music.track.{p.index}"),
+            lyrics=p.lyrics,
         )
         for p in plans
     ]

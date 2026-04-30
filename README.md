@@ -6,14 +6,17 @@ Local, fully open-source AI lofi music-video generator. Composes:
 - **Visuals** — SDXL/Animagine keyframes → [DepthFlow](https://github.com/BrokenSource/DepthFlow) parallax loops → optional [LTX-Video](https://github.com/Lightricks/LTX-Video) motion details and [Wan 2.2](https://github.com/Wan-Video/Wan2.2) hero scenes.
 - **Composition** — FFmpeg (`av1_nvenc`) muxing music, video, rain overlay, vinyl crackle, and EBU R128 loudness normalisation.
 
-Designed for **WSL2 + NVIDIA RTX 5070 Ti** (Blackwell sm_120, 16 GB). PyTorch stable does not yet support sm_120, so we pin a known-working nightly + CUDA 12.8 toolkit. Two runtime modes are supported:
+Designed for **WSL2 + NVIDIA RTX 5070 Ti** (Blackwell sm_120, 16 GB). PyTorch stable does not yet support sm_120, so we pin a known-working nightly + CUDA 12.8 toolkit. Three runtime modes are supported:
 
 | Mode | When to use |
 |---|---|
 | **Host-mode** (`.venv`) | Docker Desktop not running; natively installed toolchain. Uses libx264 software encode. |
 | **Docker** (`docker compose`) | Canonical setup. Uses `av1_nvenc` hardware encode, Python 3.11, NVENC-tuned FFmpeg. |
+| **Cloud-augmented** | Local visuals + Suno API for music (with vocals). Requires `SUNO_API_KEY` and a paid Suno tier permitting commercial use. See `configs/jazz_cafe_unsplash.yaml`. |
 
-All shipped components are commercial-use-friendly (Apache 2.0 / MIT / CreativeML Open RAIL++-M). Run `lofivid licenses` before publishing for a per-asset audit.
+The default local components are commercial-use-friendly (Apache 2.0 / MIT / CreativeML Open RAIL++-M). The cloud-augmented Suno path is a *legal grey area* — Suno has no official public API, fully-AI music is not US-copyrightable, and the third-party API wrappers (`sunoapi.org`, PiAPI, AIML) have their own ToS to verify. Run `lofivid licenses` before publishing for a per-asset audit.
+
+The **Unsplash photo backend** (`keyframe_backend: unsplash` in YAML) is available for users who want photographic visuals without GPU keyframe generation — pulls top hits from the Unsplash search API, applies the configured duotone + paper-border post-process, and writes per-image attribution sidecars. Requires `UNSPLASH_ACCESS_KEY`.
 
 ## Quickstart — host-mode (no Docker)
 

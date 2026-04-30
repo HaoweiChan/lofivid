@@ -143,12 +143,18 @@ def licenses() -> None:
     Run this before publishing any output commercially.
     """
     rows = [
-        ("ACE-Step 1.5 (code)", "Apache-2.0", "Music generation"),
+        ("ACE-Step 1.5 (code)", "Apache-2.0", "Music generation (local)"),
         ("ACE-Step 1.5 (weights)", "verify per-release", "Check repo at install time"),
+        ("Suno (cloud)", "see notes", "CLOUD service. AI-only output is NOT copyrightable in the US."),
+        ("Suno API wrapper (3rd-party)", "wrapper-dependent", "sunoapi.org/PiAPI/AIML — verify ToS yourself"),
         ("Animagine XL 4 (anime preset)", "CreativeML Open RAIL++-M", "Commercial OK with content rules"),
         ("SDXL base 1.0 (photo preset)", "CreativeML Open RAIL++-M", "Commercial OK with content rules"),
-        ("DepthFlow", "LGPL", "Parallax animation"),
+        ("FLUX.2 Klein 4B", "Apache-2.0", "2025-11-25 release; commercial-safe upgrade from SDXL"),
+        ("Z-Image-Turbo 6B", "Apache-2.0", "2025-12-04 Tongyi-MAI release; fast distilled commercial-safe"),
+        ("Unsplash photos", "Unsplash License", "Free commercial use; attribution required"),
+        ("DepthFlow", "LGPL", "Parallax animation (local)"),
         ("Depth Anything v2", "Apache-2.0 (weights vary)", "Depth maps"),
+        ("Overlay-motion (FFmpeg filters)", "n/a", "Pure FFmpeg filter graphs, no model weights"),
         ("LTX-Video (optional)", "Apache-2.0 (verify model card)", "Img→video motion clips"),
         ("Wan 2.2 (optional)", "Apache-2.0", "Premium animated scenes"),
         ("FFmpeg", "LGPL/GPL (build-dependent)", "Video composition"),
@@ -163,6 +169,17 @@ def licenses() -> None:
     console.print(
         "[yellow]Always verify model-weight licenses at the actual download URL "
         "before commercial use; weights and code can be licensed differently.[/]"
+    )
+    console.print(
+        "[bold yellow]Suno-generated audio is not eligible for copyright as a "
+        "fully-AI work. To claim copyright on the music, write your own lyrics "
+        "and meaningfully edit the stems. Verify your Suno subscription tier "
+        "permits commercial use BEFORE publishing.[/]"
+    )
+    console.print(
+        "[bold yellow]Unsplash images require photographer attribution. The "
+        "backend writes a `<scene>.jpg.attribution.txt` sidecar per image — "
+        "include the credits in your channel description / video credits.[/]"
     )
 
 
