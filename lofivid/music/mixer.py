@@ -102,6 +102,48 @@ def _normalise_and_write(src: Path, dst: Path, settings: MixSettings) -> Path:
     return dst
 
 
+@dataclass(frozen=True)
+class TrackWindow:
+    track: GeneratedTrack
+    start_seconds: float
+    end_seconds: float
+
+
+def compute_timeline(
+    tracks: list[GeneratedTrack],
+    crossfade_seconds: float,
+) -> list[TrackWindow]:
+    """Compute the [start, end] window each track occupies in the mixed output.
+
+    HUD-display semantics: track i's window ends and track i+1's begins at
+    the *midpoint* of the crossfade — that's where the perceived dominance
+    switches.
+
+    Math: track 0 plays [0, dur_0]. Track i (i>=1) starts at
+    cumulative_offset_i = sum(dur_0..dur_{i-1}) - c * i.
+    HUD switch at cumulative_offset_{i+1} + c/2.
+    """
+    if not tracks:
+        return []
+    if len(tracks) == 1:
+        return [TrackWindow(tracks[0], 0.0, tracks[0].actual_duration_seconds)]
+    c = crossfade_seconds
+    half = c / 2.0
+    abs_starts: list[float] = []
+    abs_ends: list[float] = []
+    for i, t in enumerate(tracks):
+        start = 0.0 if i == 0 else abs_starts[i - 1] + tracks[i - 1].actual_duration_seconds - c
+        end = start + t.actual_duration_seconds
+        abs_starts.append(start)
+        abs_ends.append(end)
+    windows: list[TrackWindow] = []
+    for i, t in enumerate(tracks):
+        hud_start = 0.0 if i == 0 else abs_starts[i] + half
+        hud_end = abs_ends[-1] if i == len(tracks) - 1 else abs_starts[i + 1] + half
+        windows.append(TrackWindow(t, hud_start, hud_end))
+    return windows
+
+
 def expected_total_seconds(track_durations: list[float], crossfade: float) -> float:
     """Predicted final mix length given per-track durations and one crossfade between adjacent tracks."""
     if not track_durations:

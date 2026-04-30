@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from lofivid._ffmpeg import ffmpeg_bin, select_encoder
+
+if TYPE_CHECKING:
+    from lofivid.styles.schema import StyleSpec
 
 EXPECTED_COMPUTE_CAPABILITY = (12, 0)  # sm_120 = Blackwell consumer (RTX 50 series)
 
@@ -117,3 +121,36 @@ def assert_ready() -> None:
     if failures:
         details = "\n".join(f"  - {c.name}: {c.detail}" for c in failures)
         raise RuntimeError(f"Environment preflight failed:\n{details}")
+
+
+def assert_fonts_present(style: StyleSpec, project_root: Path) -> None:
+    """Verify every font referenced by `style` exists on disk before any
+    GPU work starts. Hard error on missing fonts — there is no fallback.
+    """
+    # Local import to avoid circular import at module load time.
+    from lofivid.styles.schema import HUDSpec, TextLayerSpec  # noqa: F401
+
+    paths: list[Path] = []
+    for layer in style.brand_layers:
+        paths.append(layer.font_path)
+        if layer.cjk_font_path:
+            paths.append(layer.cjk_font_path)
+    if style.hud.enabled:
+        paths.append(style.hud.font_path)
+        if style.hud.cjk_font_path:
+            paths.append(style.hud.cjk_font_path)
+
+    missing: list[Path] = []
+    for p in paths:
+        resolved = p if p.is_absolute() else (project_root / p)
+        if not resolved.exists():
+            missing.append(resolved)
+
+    if missing:
+        bullet = "\n  - ".join(str(p) for p in missing)
+        raise RuntimeError(
+            f"Style references {len(missing)} missing font file(s):\n  - {bullet}\n"
+            "Place the OFL-licensed fonts at the paths above. There is no "
+            "fallback path — see assets/fonts/ for the bundled set or "
+            "AGENT_PIVOT_PROMPT_v2.md §11 for the required fonts."
+        )
