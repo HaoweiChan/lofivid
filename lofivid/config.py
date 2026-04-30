@@ -1,80 +1,60 @@
-"""Pydantic schema for the per-video YAML config.
+"""Pydantic schema for the per-RUN YAML config.
 
 Loaded by `lofivid generate --config <path>`. The schema is intentionally
-strict: typos in YAML keys raise immediately rather than being silently ignored.
-"""
+strict: typos in YAML keys raise immediately rather than being silently
+ignored.
 
+Pivot v3: visual + music IDENTITY (prompts, palette, anchor, brand layers,
+HUD, waveform) lives in style files at <repo>/styles/<style_ref>.yaml.
+This Config holds only per-run instance parameters (duration, seed, counts).
+"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+from lofivid.styles.loader import load_style
+
+# Re-exported for backward compatibility with consumers that import these
+# from lofivid.config (e.g. tracklist.py).
+from lofivid.styles.schema import LoraSpec, MusicAnchor, MusicVariation  # noqa: F401
+
+if TYPE_CHECKING:
+    from lofivid.styles.schema import StyleSpec
 
 
-class MusicAnchor(BaseModel):
+def _repo_root() -> Path:
+    """Repo root for resolving style_ref. Override via LOFIVID_REPO_ROOT."""
+    env = os.environ.get("LOFIVID_REPO_ROOT")
+    if env:
+        return Path(env).expanduser()
+    return Path.cwd()
+
+
+class MusicInstance(BaseModel):
+    """Per-run music parameters. Identity (anchor/backend/variations) lives in the style."""
     model_config = ConfigDict(extra="forbid")
-    bpm_range: tuple[int, int] = Field(..., description="Inclusive [low, high] BPM bounds")
-    key_pool: list[str] = Field(..., min_length=1)
-    style_tags: list[str] = Field(default_factory=list)
-
-
-class MusicVariation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    mood: str
-    instruments: list[str] = Field(default_factory=list)
-    # Optional per-mood lyric fragment — only consulted when MusicConfig.backend == "suno".
-    # When None on every variation, all Suno tracks are rendered instrumental.
-    lyrics: str | None = None
-
-
-class MusicConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    backend: Literal["acestep", "musicgen", "suno"] = "acestep"
     track_count: int = Field(..., ge=1, le=200)
     track_seconds_range: tuple[int, int] = (300, 420)
     crossfade_seconds: float = Field(6.0, ge=0.0, le=20.0)
     target_lufs: float = Field(-14.0, ge=-30.0, le=-6.0)
-    anchor: MusicAnchor
-    variations: list[MusicVariation] = Field(..., min_length=1)
-    # Suno-only: pinned model version. The user MUST commit to a version per
-    # run — don't auto-upgrade. Surfaced as a cache-key contribution via the
-    # backend's `name` (e.g. "suno-v3.5") so swapping versions invalidates.
-    suno_model_version: str = "v3.5"
 
 
-class LoraSpec(BaseModel):
+class VisualsInstance(BaseModel):
+    """Per-run visual parameters. Identity (preset/backend/prompts) lives in the style."""
     model_config = ConfigDict(extra="forbid")
-    name: str
-    weight: float = Field(0.7, ge=0.0, le=2.0)
-
-
-class VisualsConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    preset: Literal["anime", "photo"] = "anime"
     scene_count: int = Field(..., ge=1, le=200)
     scene_seconds: int = Field(..., ge=10)
     parallax_loop_seconds: int = Field(30, ge=5, le=120)
     premium_scenes: int = Field(0, ge=0)
-    keyframe_prompt_template: str = ""
-    loras: list[LoraSpec] = Field(default_factory=list)
-    # Backend selection — defaults preserve the current SDXL→DepthFlow pipeline
-    # so existing configs render byte-identically. `flux_klein` and
-    # `z_image_turbo` are 2025+ commercial-OK upgrades — see MODEL_OPTIONS.md.
-    keyframe_backend: Literal["sdxl", "unsplash", "flux_klein", "z_image_turbo"] = "sdxl"
-    parallax_backend: Literal["depthflow", "overlay_motion"] = "depthflow"
-    # Only consulted when parallax_backend == "overlay_motion".
-    motion_type: Literal["slow_zoom", "dust_motes", "light_flicker", "none"] = "slow_zoom"
-    # Optional per-config duotone override. Format: [[R,G,B], [R,G,B]] for
-    # (shadow, highlight). When None (default) the active preset's own
-    # `duotone` field is used; if both are None, no grading is applied.
-    # Only consulted by keyframe backends that perform colour grading
-    # (currently the Unsplash backend).
-    duotone: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
 
 
 class OverlaysConfig(BaseModel):
+    """Per-run CC0 overlay layers (rain video, vinyl crackle audio)."""
     model_config = ConfigDict(extra="forbid")
     rain_video: Path | None = None
     rain_opacity: float = Field(0.15, ge=0.0, le=1.0)
@@ -86,20 +66,24 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
+    style_ref: str = Field(..., description="Name of style file at <repo>/styles/<style_ref>.yaml")
     duration_minutes: float = Field(..., gt=0)
     output_resolution: tuple[int, int] = (1920, 1080)
     fps: int = Field(24, ge=12, le=60)
     seed: int = 42
 
-    music: MusicConfig
-    visuals: VisualsConfig
+    music: MusicInstance
+    visuals: VisualsInstance
     overlays: OverlaysConfig = Field(default_factory=OverlaysConfig)
+
+    # Cached on first resolve. Not part of the model schema.
+    _resolved_style: StyleSpec | None = PrivateAttr(default=None)
+    _style_hash: str | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _check_duration_matches_visuals(self) -> Config:
         target_seconds = self.duration_minutes * 60
         visuals_seconds = self.visuals.scene_count * self.visuals.scene_seconds
-        # Allow 5% slack — the timeline scheduler will pad/trim as needed.
         if abs(visuals_seconds - target_seconds) > 0.05 * target_seconds:
             raise ValueError(
                 f"visuals.scene_count * visuals.scene_seconds ({visuals_seconds}s) "
@@ -107,8 +91,32 @@ class Config(BaseModel):
             )
         return self
 
+    def _resolve(self) -> None:
+        if self._resolved_style is not None:
+            return
+        spec, h = load_style(self.style_ref, _repo_root())
+        # PrivateAttr setattr requires going through object.__setattr__ in Pydantic v2.
+        object.__setattr__(self, "_resolved_style", spec)
+        object.__setattr__(self, "_style_hash", h)
+
+    @property
+    def resolved_style(self) -> StyleSpec:
+        self._resolve()
+        assert self._resolved_style is not None
+        return self._resolved_style
+
+    @property
+    def style_hash(self) -> str:
+        self._resolve()
+        assert self._style_hash is not None
+        return self._style_hash
+
 
 def load(path: str | Path) -> Config:
     with open(path) as f:
         data = yaml.safe_load(f)
-    return Config.model_validate(data)
+    cfg = Config.model_validate(data)
+    # Eagerly resolve style so missing files / bad style YAMLs raise at load time,
+    # not deep inside the pipeline.
+    cfg._resolve()
+    return cfg

@@ -4,15 +4,20 @@ Goal: produce a tracklist that *feels* like a curated lofi mix, not 20 cuts of
 the same song. Each track inherits genre tags / BPM range / key pool from the
 anchor (cohesion), then samples one of the user-supplied variations for
 mood + instrumentation (variety).
+
+Inputs come from two layers:
+  - the active style's `music_anchor` and `music_variations` (identity)
+  - the run config's `MusicInstance` (per-render counts and durations)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lofivid.config import MusicConfig
+from lofivid.config import MusicInstance
 from lofivid.music.base import TrackSpec
 from lofivid.seeds import SeedRegistry
+from lofivid.styles.schema import MusicAnchor, MusicVariation
 
 
 @dataclass
@@ -43,24 +48,31 @@ class TrackPlan:
         return ", ".join(unique)
 
 
-def design_tracklist(cfg: MusicConfig, seeds: SeedRegistry) -> list[TrackPlan]:
-    """Sample N TrackPlans by rotating through variations + perturbing BPM/key/duration."""
+def design_tracklist(
+    anchor: MusicAnchor,
+    variations: list[MusicVariation],
+    instance: MusicInstance,
+    seeds: SeedRegistry,
+) -> list[TrackPlan]:
+    """Sample N TrackPlans by rotating through variations + perturbing BPM/key/duration.
+
+    Identity (anchor / variations) comes from the resolved style; the
+    `instance` carries only per-run counts and durations.
+    """
     rng = seeds.seed_python_rng("music.tracklist")
     plans: list[TrackPlan] = []
-    bpm_lo, bpm_hi = cfg.anchor.bpm_range
-    dur_lo, dur_hi = cfg.track_seconds_range
+    bpm_lo, bpm_hi = anchor.bpm_range
+    dur_lo, dur_hi = instance.track_seconds_range
 
-    for i in range(cfg.track_count):
-        variation = cfg.variations[i % len(cfg.variations)]
+    for i in range(instance.track_count):
+        variation = variations[i % len(variations)]
         plans.append(TrackPlan(
             index=i,
-            # Wider BPM jitter early in the mix; narrower toward the end (settling vibe).
             bpm=rng.randint(bpm_lo, bpm_hi),
-            # Round-robin through the key pool with random offset for variety.
-            key=cfg.anchor.key_pool[(i + rng.randint(0, len(cfg.anchor.key_pool) - 1)) % len(cfg.anchor.key_pool)],
+            key=anchor.key_pool[(i + rng.randint(0, len(anchor.key_pool) - 1)) % len(anchor.key_pool)],
             mood=variation.mood,
             instruments=list(variation.instruments),
-            style_tags=list(cfg.anchor.style_tags),
+            style_tags=list(anchor.style_tags),
             duration_seconds=rng.randint(dur_lo, dur_hi),
             lyrics=variation.lyrics,
         ))
@@ -79,6 +91,7 @@ def plans_to_specs(plans: list[TrackPlan], seeds: SeedRegistry) -> list[TrackSpe
             duration_seconds=p.duration_seconds,
             seed=seeds.derive(f"music.track.{p.index}"),
             lyrics=p.lyrics,
+            mood=p.mood,
         )
         for p in plans
     ]

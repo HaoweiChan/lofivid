@@ -1,66 +1,141 @@
-"""Tests for the YAML config schema."""
+"""Tests for the run YAML config schema (post-pivot v3)."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
-from lofivid.config import load
+from lofivid.config import Config, MusicInstance, VisualsInstance, load
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+def _write_style(root: Path, name: str = "test_style") -> None:
+    styles_dir = root / "styles"
+    styles_dir.mkdir(parents=True, exist_ok=True)
+    (styles_dir / f"{name}.yaml").write_text(dedent(f"""
+        name: {name}
+        keyframe_prompt_template: cafe interior
+        music_anchor:
+          bpm_range: [75, 85]
+          key_pool: [F major]
+          style_tags: [lo-fi]
+        music_variations:
+          - mood: cafe afternoon
+            instruments: [Rhodes]
+        hud:
+          font_path: assets/fonts/IBMPlexSans-Bold.ttf
+        waveform:
+          color_source: fixed
+          fixed_color: '#FFFFFF'
+    """).lstrip())
 
 
-@pytest.mark.parametrize("name", ["smoke_30sec", "anime_rainy_window", "photo_cozy_cafe"])
-def test_shipped_configs_are_valid(name: str):
-    cfg = load(REPO_ROOT / "configs" / f"{name}.yaml")
-    assert cfg.run_id
-    assert cfg.duration_minutes > 0
-    assert len(cfg.music.variations) >= 1
-    assert cfg.visuals.scene_count >= 1
+def _write_run(path: Path, *, style_ref: str = "test_style", duration_minutes: float = 30,
+               scene_count: int = 6, scene_seconds: int = 300) -> None:
+    path.write_text(dedent(f"""
+        run_id: test
+        style_ref: {style_ref}
+        duration_minutes: {duration_minutes}
+        output_resolution: [640, 360]
+        fps: 24
+        seed: 42
+        music:
+          track_count: 6
+          track_seconds_range: [280, 320]
+          crossfade_seconds: 6
+          target_lufs: -14
+        visuals:
+          scene_count: {scene_count}
+          scene_seconds: {scene_seconds}
+          parallax_loop_seconds: 30
+          premium_scenes: 0
+    """).lstrip())
 
 
-def test_invalid_yaml_raises(tmp_path: Path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text("run_id: oops\nduration_minutes: 60\n")  # missing required fields
-    with pytest.raises(Exception):
-        load(bad)
+def test_load_valid_run_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _write_style(tmp_path)
+    run = tmp_path / "run.yaml"
+    _write_run(run)
+    monkeypatch.setenv("LOFIVID_REPO_ROOT", str(tmp_path))
+    cfg = load(run)
+    assert cfg.run_id == "test"
+    assert cfg.style_ref == "test_style"
+    assert cfg.resolved_style.name == "test_style"
 
 
-def test_visual_scene_seconds_must_match_total(tmp_path: Path):
-    bad = tmp_path / "mismatched.yaml"
-    bad.write_text(
-        """
-run_id: bad
-duration_minutes: 60     # = 3600 seconds
-output_resolution: [640, 360]
-fps: 24
-seed: 1
-music:
-  backend: acestep
-  track_count: 1
-  track_seconds_range: [30, 30]
-  crossfade_seconds: 0
-  target_lufs: -16
-  anchor:
-    bpm_range: [75, 75]
-    key_pool: [A minor]
-    style_tags: [lo-fi]
-  variations:
-    - { mood: x, instruments: [piano] }
-visuals:
-  preset: anime
-  scene_count: 1
-  scene_seconds: 30      # 30 != 3600
-  parallax_loop_seconds: 15
-  premium_scenes: 0
-  keyframe_prompt_template: x
-  loras: []
-overlays:
-  rain_video: null
-  vinyl_crackle: null
-"""
+def test_load_raises_when_missing_required_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from pydantic import ValidationError
+    _write_style(tmp_path)
+    run = tmp_path / "bad.yaml"
+    run.write_text("run_id: oops\nduration_minutes: 60\n")  # missing required fields
+    monkeypatch.setenv("LOFIVID_REPO_ROOT", str(tmp_path))
+    with pytest.raises(ValidationError):
+        load(run)
+
+
+def test_duration_vs_visuals_validator_fires(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _write_style(tmp_path)
+    run = tmp_path / "mismatched.yaml"
+    # 60 min = 3600s; visuals = 1 * 30s = 30s → outside 5% slack → must raise.
+    _write_run(run, duration_minutes=60, scene_count=1, scene_seconds=30)
+    monkeypatch.setenv("LOFIVID_REPO_ROOT", str(tmp_path))
+    with pytest.raises(Exception, match="does not match"):
+        load(run)
+
+
+def test_load_raises_when_style_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Don't write the style file
+    run = tmp_path / "run.yaml"
+    _write_run(run, style_ref="ghost")
+    monkeypatch.setenv("LOFIVID_REPO_ROOT", str(tmp_path))
+    with pytest.raises(FileNotFoundError, match="ghost"):
+        load(run)
+
+
+def test_music_instance_extra_field_rejected_in_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _write_style(tmp_path)
+    run = tmp_path / "bad.yaml"
+    run.write_text(dedent("""
+        run_id: test
+        style_ref: test_style
+        duration_minutes: 30
+        music:
+          backend: acestep   # forbidden — belongs in style
+          track_count: 6
+          track_seconds_range: [280, 320]
+          crossfade_seconds: 6
+          target_lufs: -14
+        visuals:
+          scene_count: 6
+          scene_seconds: 300
+          parallax_loop_seconds: 30
+          premium_scenes: 0
+    """).lstrip())
+    monkeypatch.setenv("LOFIVID_REPO_ROOT", str(tmp_path))
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        load(run)
+
+
+def test_minimal_programmatic_construction():
+    music = MusicInstance(
+        track_count=6,
+        track_seconds_range=(280, 320),
+        crossfade_seconds=6,
+        target_lufs=-14,
     )
-    with pytest.raises(Exception):
-        load(bad)
+    visuals = VisualsInstance(
+        scene_count=6,
+        scene_seconds=300,
+        parallax_loop_seconds=30,
+        premium_scenes=0,
+    )
+    cfg = Config(
+        run_id="test",
+        style_ref="ghost",  # not resolved unless we touch resolved_style
+        duration_minutes=30,
+        music=music,
+        visuals=visuals,
+    )
+    assert cfg.run_id == "test"
