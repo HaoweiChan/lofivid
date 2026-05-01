@@ -33,6 +33,7 @@ from lofivid.compose.timeline import schedule
 from lofivid.config import Config, load
 from lofivid.env import assert_fonts_present
 from lofivid.music import registry as music_registry
+from lofivid.music._audio_probe import probe_duration_seconds as _probe_duration_seconds
 from lofivid.music.base import GeneratedTrack, MusicBackend
 from lofivid.music.mixer import MixSettings, compute_timeline, mix_tracks
 from lofivid.music.tracklist import design_tracklist, plans_to_specs
@@ -112,16 +113,16 @@ def _do_music(cfg: Config, style: StyleSpec, cache: Cache) -> tuple[Path, list[G
             "backend": backend.name,
             "style_hash": cfg.style_hash,
             **spec.cache_key(),
+            **backend.cache_key_extras(spec),
         })
         cached = cache.get("music_track", key)
         if cached is not None:
             log.info("Track %d cache hit (%s)", spec.track_index, cached.name)
-            title, artist = _read_track_sidecar(cached)
-            from lofivid.music.acestep import _probe_duration_seconds
+            title, artist, attribution = _read_track_sidecar(cached)
             rendered.append(GeneratedTrack(
                 spec=spec, path=cached, sample_rate=44100,
                 actual_duration_seconds=_probe_duration_seconds(cached),
-                title=title, artist=artist,
+                title=title, artist=artist, attribution=attribution,
             ))
             continue
         gen = backend.generate(spec, tracks_dir)
@@ -288,7 +289,7 @@ def _do_compose(
     actual = ffmpeg_ops.probe_duration_seconds(final)
     log.info("Final video: %s (%.1fs, target %.1fs)", final, actual, total_seconds)
 
-    _write_manifest(cache, cfg, style, output_path, actual)
+    _write_manifest(cache, cfg, style, output_path, actual, tracks)
     return final
 
 
@@ -306,25 +307,37 @@ def _make_music_backend(style: StyleSpec) -> MusicBackend:
 def _make_visual_backends(style: StyleSpec) -> tuple[KeyframeBackend, ParallaxBackend]:
     preset = get_preset(style.preset)
     spec = preset.spec()
-
-    keyframe_kwargs = dict(style.keyframe_backend_params)
-    if style.keyframe_backend == "sdxl":
-        # Allow per-style LoRA override. SDXL backend takes (model_id, loras, ...).
-        loras = [(lora.name, lora.weight) for lora in style.loras] or spec.loras
-        keyframe_kwargs.setdefault("model_id", spec.model_id)
-        keyframe_kwargs.setdefault("loras", loras)
-        keyframe_kwargs.setdefault("negative_prompt", spec.negative_prompt)
-    elif style.keyframe_backend == "unsplash":
-        keyframe_kwargs.setdefault("quality_suffix", spec.quality_suffix)
-        keyframe_kwargs.setdefault("duotone_pair", style.duotone or spec.duotone)
-
+    keyframe_kwargs = _resolve_keyframe_kwargs(style, spec)
+    parallax_kwargs = _resolve_parallax_kwargs(style)
     keyframe = visuals_registry.make_keyframe(style.keyframe_backend, **keyframe_kwargs)
-
-    parallax_kwargs = dict(style.parallax_backend_params)
-    if style.parallax_backend == "overlay_motion":
-        parallax_kwargs.setdefault("motion_type", style.motion_type)
     parallax = visuals_registry.make_parallax(style.parallax_backend, **parallax_kwargs)
     return keyframe, parallax
+
+
+def _resolve_keyframe_kwargs(style: StyleSpec, preset_spec) -> dict:
+    """Merge per-backend preset defaults under the style's user-supplied kwargs.
+
+    Preset-derived defaults live here (not in the registry) because the
+    registry's job is instantiation, not domain-aware kwarg synthesis.
+    Style YAML values always win over preset defaults via `setdefault`.
+    """
+    kwargs = dict(style.keyframe_backend_params)
+    if style.keyframe_backend == "sdxl":
+        loras = [(lora.name, lora.weight) for lora in style.loras] or preset_spec.loras
+        kwargs.setdefault("model_id", preset_spec.model_id)
+        kwargs.setdefault("loras", loras)
+        kwargs.setdefault("negative_prompt", preset_spec.negative_prompt)
+    elif style.keyframe_backend == "unsplash":
+        kwargs.setdefault("quality_suffix", preset_spec.quality_suffix)
+        kwargs.setdefault("duotone_pair", style.duotone or preset_spec.duotone)
+    return kwargs
+
+
+def _resolve_parallax_kwargs(style: StyleSpec) -> dict:
+    kwargs = dict(style.parallax_backend_params)
+    if style.parallax_backend == "overlay_motion":
+        kwargs.setdefault("motion_type", style.motion_type)
+    return kwargs
 
 
 # ---------- helpers --------------------------------------------------------
@@ -341,24 +354,32 @@ def _track_sidecar_path(track_path: Path) -> Path:
 
 
 def _write_track_sidecar(track: GeneratedTrack) -> None:
-    """Persist title/artist next to the cached WAV so cache hits don't lose metadata."""
+    """Persist title/artist/attribution next to the cached WAV.
+
+    Without this, a cache hit would re-instantiate `GeneratedTrack` with empty
+    title/artist/attribution, breaking HUD display and manifest provenance.
+    """
     side = _track_sidecar_path(track.path)
     side.write_text(json.dumps({
         "title": track.title,
         "artist": track.artist,
+        "attribution": track.attribution,
     }, indent=2, default=str))
 
 
-def _read_track_sidecar(track_path: Path) -> tuple[str, str | None]:
+def _read_track_sidecar(track_path: Path) -> tuple[str, str | None, dict | None]:
     side = _track_sidecar_path(track_path)
     if not side.exists():
-        return "", None
+        return "", None, None
     try:
         data = json.loads(side.read_text())
-        return str(data.get("title") or ""), data.get("artist")
+        attribution = data.get("attribution")
+        if attribution is not None and not isinstance(attribution, dict):
+            attribution = None
+        return str(data.get("title") or ""), data.get("artist"), attribution
     except Exception as e:
         log.warning("Could not read track sidecar %s: %s", side, e)
-        return "", None
+        return "", None, None
 
 
 @dataclass(frozen=True)
@@ -380,7 +401,8 @@ def _classify_provenance(style: StyleSpec) -> _ManifestProvenance:
 
 
 def _write_manifest(cache: Cache, cfg: Config, style: StyleSpec,
-                    output_path: Path, actual_duration: float) -> None:
+                    output_path: Path, actual_duration: float,
+                    tracks: list[GeneratedTrack]) -> None:
     provenance = _classify_provenance(style)
     manifest = {
         "run_id": cfg.run_id,
@@ -393,6 +415,60 @@ def _write_manifest(cache: Cache, cfg: Config, style: StyleSpec,
         "style_content": json.loads(style.model_dump_json()),
         "regenerate_status": provenance.regenerate_status,
         "cloud_sources": provenance.cloud_sources,
+        "music_attributions": _build_music_attributions(tracks),
     }
     with open(cache.root / "run_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2, default=str)
+
+
+def _build_music_attributions(tracks: list[GeneratedTrack]) -> list[dict]:
+    """Flatten per-track sidecar info into a manifest-friendly list.
+
+    Each entry merges the user-facing track identity (title/artist/duration)
+    with the source provenance (source/license/attribution_text/original_url
+    /license_certificate_url) and a derived `at_risk_for_content_id_claim`
+    flag — true when the track is from Pixabay without a license certificate
+    (Pixabay's own FAQ acknowledges these may trigger automated Content ID
+    claims even though the license permits the use). Tracks without a sidecar
+    produce an entry with `source: null` and `at_risk_for_content_id_claim:
+    null` — the render is recorded, but no provenance flows into the video
+    description.
+    """
+    out: list[dict] = []
+    for t in tracks:
+        attr = t.attribution or {}
+        out.append({
+            "track_title": t.title,
+            "track_artist": t.artist,
+            "track_duration_s": t.actual_duration_seconds,
+            "source": attr.get("source"),
+            "source_id": attr.get("source_id"),
+            "license": attr.get("license"),
+            "attribution_text": attr.get("attribution_text"),
+            "original_url": attr.get("original_url"),
+            "license_certificate_url": attr.get("license_certificate_url"),
+            "at_risk_for_content_id_claim": _classify_content_id_risk(attr),
+        })
+    return out
+
+
+def _classify_content_id_risk(attr: dict) -> bool | None:
+    """Heuristic flag for "is this track likely to trigger a YouTube Content ID claim?".
+
+    Returns:
+      - None  : unknown (no sidecar / no source attribution).
+      - True  : Pixabay track without a license certificate URL — the license
+                permits the use, but disputing an automated claim relies on
+                track URL + license-summary URL rather than a Pixabay-issued
+                certificate; expect the dispute process to be slower.
+      - False : everything else — manual / FMA-CC0 / Pixabay-with-certificate.
+                Manual tracks are user-supplied; the user is the one holding
+                the proof of license, so the pipeline cannot meaningfully
+                second-guess them.
+    """
+    source = attr.get("source")
+    if source is None:
+        return None
+    if source == "pixabay":
+        return attr.get("license_certificate_url") is None
+    return False
