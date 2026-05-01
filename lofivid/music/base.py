@@ -52,6 +52,14 @@ class GeneratedTrack:
     actual_duration_seconds: float
     title: str = ""
     artist: str | None = None
+    # Optional source/license/attribution dict — populated by LibraryMusicBackend
+    # from the per-track sidecar JSON written by the ingest layer (see
+    # lofivid/ingest/base.py). Keys: source, source_id, license,
+    # attribution_text, original_url, fetched_at. Surfaced through the
+    # manifest's `music_attributions` list. None for backends that don't
+    # provide a sidecar (e.g. ACE-Step / Suno) or for legacy library files
+    # without a sidecar.
+    attribution: dict | None = None
 
 
 class MusicBackend(ABC):
@@ -67,6 +75,16 @@ class MusicBackend(ABC):
         and load/unload model weights internally so the caller does not need
         to manage VRAM lifecycle.
         """
+
+    def cache_key_extras(self, spec: TrackSpec) -> dict:
+        """Extra contributions to the per-track cache key beyond `spec.cache_key()`.
+
+        Override when the backend resolves external state (e.g. a library
+        backend's selected file path + content hash) that should invalidate
+        the cache when it changes. Default returns {} so generative backends
+        like ACE-Step / Suno stay unchanged.
+        """
+        return {}
 
     def warmup(self) -> None:
         """Optional: pre-load weights so the first generate() call isn't slow."""
