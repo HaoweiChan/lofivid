@@ -26,6 +26,13 @@ assets/
 *.mp4
 !tests/fixtures/**/*.wav
 !tests/fixtures/**/*.mp4
+# Font bundle is checked in so a fresh clone can run morning_cafe etc.
+# without external downloads — they're SIL OFL 1.1 (commercial-safe).
+!assets/fonts/**/*.ttf
+!assets/fonts/**/*.otf
+!assets/fonts/README.md
+# Music library README documents the per-channel licensing convention.
+!assets/music/README.md
 
 # Claude Code / OMC
 .claude/

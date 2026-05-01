@@ -1,21 +1,19 @@
-"""Importing this package triggers visual backend registration."""
+"""Importing this package registers every visual backend via factory lambdas.
+
+All backends use the same pattern (factory lambda → lazy import) so heavy
+GPU / network deps are only imported when a run actually selects that
+backend. The lambdas themselves are registered eagerly here so the
+registry is fully populated by the time the pipeline asks by name.
+"""
 from __future__ import annotations
 
-# Eager: cheap parallax backend with no heavy GPU deps.
-# OverlayMotionBackend registers itself at the bottom of overlay_motion.py.
-from lofivid.visuals import overlay_motion  # noqa: F401  (side-effect: registers "overlay_motion")
-
-# Lazy keyframe/parallax backends: factory lambdas so GPU/network deps are
-# not imported until the backend is actually instantiated.
 from lofivid.visuals import registry as _registry
 
+# ---------- keyframe backends ----------------------------------------------
 
 def _make_sdxl(**kwargs):
     from lofivid.visuals.keyframes import SDXLKeyframeBackend
     return SDXLKeyframeBackend(**kwargs)
-
-
-_registry.register_keyframe("sdxl", _make_sdxl)
 
 
 def _make_unsplash(**kwargs):
@@ -23,15 +21,9 @@ def _make_unsplash(**kwargs):
     return UnsplashKeyframeBackend(**kwargs)
 
 
-_registry.register_keyframe("unsplash", _make_unsplash)
-
-
 def _make_flux_klein(**kwargs):
     from lofivid.visuals.flux_klein import FluxKleinKeyframeBackend
     return FluxKleinKeyframeBackend(**kwargs)
-
-
-_registry.register_keyframe("flux_klein", _make_flux_klein)
 
 
 def _make_z_image(**kwargs):
@@ -39,7 +31,17 @@ def _make_z_image(**kwargs):
     return ZImageTurboKeyframeBackend(**kwargs)
 
 
+_registry.register_keyframe("sdxl", _make_sdxl)
+_registry.register_keyframe("unsplash", _make_unsplash)
+_registry.register_keyframe("flux_klein", _make_flux_klein)
 _registry.register_keyframe("z_image_turbo", _make_z_image)
+
+
+# ---------- parallax backends ----------------------------------------------
+
+def _make_overlay_motion(**kwargs):
+    from lofivid.visuals.overlay_motion import OverlayMotionBackend
+    return OverlayMotionBackend(**kwargs)
 
 
 def _make_depthflow(**kwargs):
@@ -47,4 +49,5 @@ def _make_depthflow(**kwargs):
     return DepthFlowBackend(**kwargs)
 
 
+_registry.register_parallax("overlay_motion", _make_overlay_motion)
 _registry.register_parallax("depthflow", _make_depthflow)

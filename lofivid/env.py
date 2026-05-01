@@ -126,12 +126,14 @@ def assert_ready() -> None:
 def assert_fonts_present(style: StyleSpec, project_root: Path) -> None:
     """Verify every font referenced by `style` exists on disk before any
     GPU work starts. Hard error on missing fonts — there is no fallback.
-    """
-    # Local import to avoid circular import at module load time.
-    from lofivid.styles.schema import HUDSpec, TextLayerSpec  # noqa: F401
 
+    Disabled layers / disabled HUD don't contribute paths; their fonts are
+    never opened so requiring them on disk would be a footgun.
+    """
     paths: list[Path] = []
     for layer in style.brand_layers:
+        if not layer.enabled:
+            continue
         paths.append(layer.font_path)
         if layer.cjk_font_path:
             paths.append(layer.cjk_font_path)
@@ -151,6 +153,5 @@ def assert_fonts_present(style: StyleSpec, project_root: Path) -> None:
         raise RuntimeError(
             f"Style references {len(missing)} missing font file(s):\n  - {bullet}\n"
             "Place the OFL-licensed fonts at the paths above. There is no "
-            "fallback path — see assets/fonts/ for the bundled set or "
-            "AGENT_PIVOT_PROMPT_v2.md §11 for the required fonts."
+            "fallback path — see assets/fonts/README.md for the bundled set."
         )

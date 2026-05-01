@@ -185,7 +185,7 @@ def concat_with_crossfades(
         in_idx = hud_idx_start + i
         # Format the PNG to yuva so the alpha channel is honoured.
         vf_parts.append(f"[{in_idx}:v]format=yuva420p,setpts=PTS-STARTPTS[hud{i}]")
-        next_label = f"[vhud{i}]" if i < len(hud_overlays) - 1 or True else "[vfinal_pre_wave]"
+        next_label = f"[vhud{i}]"
         vf_parts.append(
             f"{current}[hud{i}]overlay={h.x_expr}:{h.y_expr}:"
             f"enable='between(t,{h.start_seconds:.3f},{h.end_seconds:.3f})':shortest=1{next_label}"
@@ -213,7 +213,7 @@ def concat_with_crossfades(
         vf_parts.append(f"[{audio_idx}:a][oa]amix=inputs=2:duration=first:dropout_transition=0[aout]")
         a_out = "[aout]"
     else:
-        a_out = f"[{audio_idx}:a]"
+        a_out = f"{audio_idx}:a"  # direct stream specifier, not a filter label
 
     profile = settings.encoder()
     cmd.extend([

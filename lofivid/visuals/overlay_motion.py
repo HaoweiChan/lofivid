@@ -130,12 +130,11 @@ class OverlayMotionBackend(ParallaxBackend):
             str(out_path),
         ]
 
-    @staticmethod
-    def _encode_flags() -> list[str]:
+    def _encode_flags(self) -> list[str]:
         return [
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "22",
+            "-preset", self.x264_preset,
+            "-crf", str(self.crf),
             "-pix_fmt", "yuv420p",
             "-tune", "film",
             "-an",
@@ -233,6 +232,3 @@ class OverlayMotionBackend(ParallaxBackend):
         )
 
 
-from lofivid.visuals.registry import register_parallax as _register_parallax  # noqa: E402
-
-_register_parallax("overlay_motion", OverlayMotionBackend)
