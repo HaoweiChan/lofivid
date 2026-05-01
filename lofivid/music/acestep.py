@@ -42,6 +42,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from lofivid.music._audio_probe import probe_duration_seconds as _probe_duration_seconds
 from lofivid.music.base import GeneratedTrack, MusicBackend, TrackSpec
 
 log = logging.getLogger(__name__)
@@ -202,17 +203,3 @@ class ACEStepBackend(MusicBackend):
         )
 
 
-def _probe_duration_seconds(path: Path) -> float:
-    """Cheap duration probe via soundfile; falls back to 0.0 if unavailable."""
-    try:
-        import soundfile as sf
-        info = sf.info(str(path))
-        return info.frames / info.samplerate
-    except Exception as e:
-        log.warning("Could not probe duration of %s: %s", path, e)
-        return 0.0
-
-
-from lofivid.music.registry import register as _register  # noqa: E402
-
-_register("acestep", ACEStepBackend)
