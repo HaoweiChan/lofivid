@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from lofivid._ffmpeg import ffmpeg_bin
+from lofivid.ingest.base import read_sidecar as _read_attribution_sidecar
 from lofivid.music.base import GeneratedTrack, MusicBackend, TrackSpec
 
 log = logging.getLogger(__name__)
@@ -87,10 +88,37 @@ class LibraryMusicBackend(MusicBackend):
                 return cand
         return None
 
+    def _resolve_source(self, spec: TrackSpec) -> Path:
+        """Return the source file the backend will pick for `spec`.
+
+        Pure function of `(library_dir, mood, seed)` — same inputs always
+        resolve to the same file, which is what makes
+        `cache_key_extras` deterministic.
+        """
+        shortlist = self._shortlist(spec)
+        return shortlist[spec.seed % len(shortlist)]
+
+    def cache_key_extras(self, spec: TrackSpec) -> dict:
+        """Cache key contribution: resolved path + content hash of first 1 MB.
+
+        Path catches "moved or replaced file" via filename change; the
+        content hash catches "same filename, different bytes" — e.g. you
+        replaced cafe_afternoon/song.wav with a different mix while keeping
+        the filename and seed identical.
+        """
+        try:
+            chosen = self._resolve_source(spec)
+        except RuntimeError:
+            # Library missing or empty — let `generate()` raise the loud error.
+            return {"resolved_path": None, "content_hash": None}
+        return {
+            "resolved_path": str(chosen),
+            "content_hash": content_hash_first_mb(chosen),
+        }
+
     def generate(self, spec: TrackSpec, output_dir: Path) -> GeneratedTrack:
         output_dir.mkdir(parents=True, exist_ok=True)
-        shortlist = self._shortlist(spec)
-        chosen = shortlist[spec.seed % len(shortlist)]
+        chosen = self._resolve_source(spec)
         out_path = output_dir / f"{spec.track_index:03d}.wav"
 
         if chosen.suffix.lower() == ".wav":
@@ -99,6 +127,16 @@ class LibraryMusicBackend(MusicBackend):
             _transcode_to_wav(chosen, out_path, target_sr=44100)
 
         title, artist = _read_metadata(chosen)
+        attribution = _read_attribution_sidecar(chosen)
+        if attribution is None:
+            log.warning(
+                "library track %s has no .attribution.json sidecar; "
+                "manifest music_attributions will record source=null for it. "
+                "Run `lofivid music-ingest --source manual --target %s` to "
+                "generate sidecars for pre-existing files.",
+                chosen.name,
+                chosen.parent,
+            )
 
         try:
             import soundfile as sf
@@ -115,6 +153,7 @@ class LibraryMusicBackend(MusicBackend):
             actual_duration_seconds=actual,
             title=title or chosen.stem,
             artist=artist,
+            attribution=attribution,
         )
 
 
