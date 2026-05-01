@@ -118,6 +118,12 @@ class StyleSpec(BaseModel):
     hud: HUDSpec
     waveform: WaveformSpec
 
+    # Ingest hint: per-mood search tags for `lofivid music-ingest --style <name>`.
+    # Maps mood_slug → list of search keywords passed to the ingest source.
+    # Empty mapping = ingest CLI must be run with explicit --mood as the only tag.
+    # Participates in the style hash (changing it changes which library you'd ingest).
+    library_search_tags: dict[str, list[str]] = Field(default_factory=dict)
+
     @model_validator(mode="after")
     def _validate_waveform_color_source(self) -> StyleSpec:
         # If color_source is duotone-derived, duotone must be set.

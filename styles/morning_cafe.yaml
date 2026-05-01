@@ -84,3 +84,15 @@ waveform:
   scale: sqrt
   color_source: duotone_highlight
   opacity: 0.55
+
+# Ingest hint: per-mood search tags consumed by `lofivid music-ingest --style morning_cafe`.
+# Pixabay's tag taxonomy is broad — keep the keyword list short and prefer
+# descriptors that bias the search toward warm-cream cafe-jazz rather than
+# hyperpop or chillstep adjacent moods.
+library_search_tags:
+  cafe_afternoon:    [cafe, jazz, lo-fi, warm, afternoon]
+  rainy_window:      [rain, jazz, piano, ambient, melancholic]
+  late_night_booth:  [late night, jazz, smooth, mellow]
+  vinyl_spin:        [vinyl, jazz, lo-fi, vintage]
+  latte_art:         [cafe, soft, jazz, calm]
+  bookshelf_hour:    [study, jazz, piano, focus]
