@@ -1,0 +1,31 @@
+name: _smoke_suno
+description: |
+  Like _smoke but uses the Suno cloud backend instead of ACE-Step.
+  Requires SUNO_API_KEY in the environment.
+
+preset: photo
+keyframe_backend: unsplash
+keyframe_prompt_template: empty cafe interior
+parallax_backend: overlay_motion
+motion_type: none
+duotone: null
+
+music_backend: suno
+music_anchor:
+  bpm_range: [75, 80]
+  key_pool: [A minor]
+  style_tags: [lo-fi]
+music_variations:
+  - mood: smoke test
+    instruments: [piano]
+
+brand_layers: []
+
+hud:
+  enabled: false
+  font_path: assets/fonts/IBMPlexSans-Bold.ttf
+
+waveform:
+  enabled: false
+  color_source: fixed
+  fixed_color: '#FFFFFF'

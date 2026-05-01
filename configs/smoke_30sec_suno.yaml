@@ -1,0 +1,24 @@
+run_id: smoke_30sec_suno
+style_ref: _smoke_suno
+duration_minutes: 0.5
+output_resolution: [640, 360]
+fps: 24
+seed: 1
+
+music:
+  track_count: 1
+  track_seconds_range: [30, 30]
+  crossfade_seconds: 0
+  target_lufs: -16
+
+visuals:
+  scene_count: 1
+  scene_seconds: 30
+  parallax_loop_seconds: 15
+  premium_scenes: 0
+
+overlays:
+  rain_video: null
+  rain_opacity: 0.0
+  vinyl_crackle: null
+  vinyl_gain_db: -28
