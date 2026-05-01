@@ -1,12 +1,14 @@
 """Tests for LibraryMusicBackend."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 import soundfile as sf
 
+from lofivid.ingest.base import write_sidecar
 from lofivid.music.base import GeneratedTrack, TrackSpec
 from lofivid.music.library import LibraryMusicBackend, slugify
 
@@ -160,3 +162,117 @@ def test_actual_duration_populated(tmp_path):
     spec = _make_spec(seed=0)
     track = backend.generate(spec, out)
     assert abs(track.actual_duration_seconds - 2.0) < 0.1
+
+
+# ---------- cache_key_extras (path + content hash) --------------------------
+
+def test_cache_key_extras_returns_path_and_content_hash(tmp_path):
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    _write_silent_wav(mood_dir / "song.wav", duration_s=1.0)
+
+    backend = LibraryMusicBackend(library_dir=lib)
+    extras = backend.cache_key_extras(_make_spec(seed=0))
+
+    assert "resolved_path" in extras
+    assert "content_hash" in extras
+    assert extras["resolved_path"] == str(mood_dir / "song.wav")
+    assert extras["content_hash"] is not None and len(extras["content_hash"]) == 16
+
+
+def test_cache_key_extras_changes_when_content_changes(tmp_path):
+    """Same filename + same seed but different bytes ⇒ different cache key."""
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    target = mood_dir / "song.wav"
+    _write_silent_wav(target, duration_s=1.0)
+
+    backend = LibraryMusicBackend(library_dir=lib)
+    spec = _make_spec(seed=0)
+    extras_before = backend.cache_key_extras(spec)
+
+    # Overwrite with different content (longer file, different samples).
+    target.unlink()
+    data = (np.ones(int(2.0 * 44100), dtype=np.int16) * 100)
+    sf.write(str(target), data, 44100)
+
+    extras_after = backend.cache_key_extras(spec)
+
+    assert extras_before["resolved_path"] == extras_after["resolved_path"]
+    assert extras_before["content_hash"] != extras_after["content_hash"]
+
+
+def test_cache_key_extras_stable_under_unchanged_content(tmp_path):
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    _write_silent_wav(mood_dir / "song.wav", duration_s=1.0)
+
+    backend = LibraryMusicBackend(library_dir=lib)
+    spec = _make_spec(seed=0)
+
+    a = backend.cache_key_extras(spec)
+    b = backend.cache_key_extras(spec)
+    assert a == b
+
+
+def test_cache_key_extras_handles_missing_library_gracefully(tmp_path):
+    """Empty library: extras shouldn't raise; let generate() be the loud one."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    backend = LibraryMusicBackend(library_dir=lib)
+    extras = backend.cache_key_extras(_make_spec(seed=0))
+    assert extras == {"resolved_path": None, "content_hash": None}
+
+
+# ---------- attribution sidecar (v3 ingest layer) ---------------------------
+
+def test_generated_track_attribution_none_when_no_sidecar(tmp_path):
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    _write_silent_wav(mood_dir / "song.wav")
+    backend = LibraryMusicBackend(library_dir=lib)
+    track = backend.generate(_make_spec(seed=0), tmp_path / "out")
+    assert track.attribution is None
+
+
+def test_generated_track_picks_up_sidecar_attribution(tmp_path):
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    audio = mood_dir / "song.wav"
+    _write_silent_wav(audio)
+    write_sidecar(
+        audio,
+        source="pixabay",
+        source_id="99",
+        license="pixabay-content-license",
+        attribution_text=None,
+        original_url="https://pixabay.com/music/99/",
+    )
+    backend = LibraryMusicBackend(library_dir=lib)
+    track = backend.generate(_make_spec(seed=0), tmp_path / "out")
+    assert track.attribution is not None
+    assert track.attribution["source"] == "pixabay"
+    assert track.attribution["source_id"] == "99"
+    assert track.attribution["license"] == "pixabay-content-license"
+
+
+def test_sidecar_carries_cc_by_attribution_text(tmp_path):
+    lib = tmp_path / "lib"
+    mood_dir = lib / "cafe_afternoon"
+    audio = mood_dir / "song.wav"
+    _write_silent_wav(audio)
+    write_sidecar(
+        audio,
+        source="fma",
+        source_id="abc",
+        license="cc-by-4.0",
+        attribution_text='"Slow Tuesday" by jellyfish, CC-BY-4.0',
+        original_url="https://freemusicarchive.org/track/abc/",
+    )
+    backend = LibraryMusicBackend(library_dir=lib)
+    track = backend.generate(_make_spec(seed=0), tmp_path / "out")
+    assert track.attribution["attribution_text"].startswith('"Slow Tuesday"')
+    # Sidecar must NOT have replaced the audio metadata fields.
+    sidecar_data = json.loads((mood_dir / "song.attribution.json").read_text())
+    assert "title" not in sidecar_data
+    assert "artist" not in sidecar_data
